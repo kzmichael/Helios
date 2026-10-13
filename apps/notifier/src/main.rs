@@ -78,8 +78,21 @@ async fn main() {
 
     tracing::info!(brokers = %brokers, "notifier started, consuming {REQUESTED_TOPIC}");
 
+    let mut terminate = tokio::signal::unix::signal(
+        tokio::signal::unix::SignalKind::terminate(),
+    )
+    .expect("failed to register SIGTERM handler");
+
     loop {
-        match consumer.recv().await {
+        let received = tokio::select! {
+            _ = terminate.recv() => {
+                tracing::info!("SIGTERM received; stopping notifier");
+                break;
+            }
+            result = consumer.recv() => result,
+        };
+
+        match received {
             Err(e) => tracing::error!(error = %e, "kafka receive error"),
             Ok(msg) => {
                 let payload = match msg.payload() {
