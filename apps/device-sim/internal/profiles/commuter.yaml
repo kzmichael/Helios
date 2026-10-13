@@ -1,0 +1,12 @@
+# A commuting vehicle: short bursts of driving, long idle periods, moderate
+# speed, ignition frequently off. The most common real-world profile.
+name: commuter
+emission_hz: 1.0
+speed_kph:
+  min: 0
+  max: 60
+  cruise: 35
+idle_probability: 0.35
+ignition_off_probability: 0.20
+heading_change_deg_per_tick: 8
+gps_noise_m: 3.0

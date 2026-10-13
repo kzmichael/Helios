@@ -1,0 +1,5 @@
+#!/bin/sh
+
+set -eu
+
+exec mise exec -- gitleaks git --pre-commit --staged --redact -c security/gitleaks/gitleaks.toml

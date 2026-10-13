@@ -1,0 +1,13 @@
+# A vehicle parked most of the time: engine off, occasional short moves. Exists
+# to exercise the "device offline" alert rule (apps/_db/seed/0001_tenants.sql)
+# without simulating an actual fault.
+name: idle
+emission_hz: 0.2
+speed_kph:
+  min: 0
+  max: 15
+  cruise: 0
+idle_probability: 0.90
+ignition_off_probability: 0.85
+heading_change_deg_per_tick: 0
+gps_noise_m: 5.0

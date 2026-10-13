@@ -1,0 +1,12 @@
+# A long-haul truck: sustained highway speed, rare stops, long routes. Exercises
+# the "vehicle has been driving continuously for hours" code paths.
+name: long-haul
+emission_hz: 1.0
+speed_kph:
+  min: 0
+  max: 95
+  cruise: 82
+idle_probability: 0.05
+ignition_off_probability: 0.03
+heading_change_deg_per_tick: 2
+gps_noise_m: 2.0

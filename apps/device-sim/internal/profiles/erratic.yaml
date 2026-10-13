@@ -1,0 +1,14 @@
+# A deliberately misbehaving device: erratic speed, frequent hard heading
+# changes, high GPS noise, occasional implausible values. Exists to exercise
+# validate.Point in apps/ingest and the alert rules that are supposed to catch
+# genuine bad behaviour without also flagging noisy-but-legitimate signals.
+name: erratic
+emission_hz: 2.0
+speed_kph:
+  min: 0
+  max: 140
+  cruise: 60
+idle_probability: 0.10
+ignition_off_probability: 0.05
+heading_change_deg_per_tick: 45
+gps_noise_m: 15.0

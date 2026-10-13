@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package trackline.v1;
+
+option go_package = "github.com/helios/trackline/gen/trackline/v1;tracklinev1";
+
+// Shared value types. Anything used by more than one service belongs here.
+
+enum Tier {
+  TIER_UNSPECIFIED = 0;
+  TIER_FREE = 1;
+  TIER_PRO = 2;
+  TIER_ENTERPRISE = 3;
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_INFO = 1;
+  SEVERITY_WARNING = 2;
+  SEVERITY_CRITICAL = 3;
+}
+
+// WGS84. Latitude in [-90, 90], longitude in [-180, 180].
+message GeoPoint {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+// Closed ring; the first and last vertices must be equal. GeoJSON winding order.
+message Polygon {
+  repeated GeoPoint vertices = 1;
+}
+
+message Actor {
+  string tenant_id = 1;
+  string subject_id = 2;
+  // One of: user, device, service.
+  string kind = 3;
+}
+
+// Envelope shared by every message published to Kafka. Mirrors CloudEvents.
+message EventMeta {
+  string event_id = 1;
+  string tenant_id = 2;
+  string source = 3;
+
+  // Unix milliseconds. When the event occurred, not when it was published.
+  int64 occurred_at = 4;
+
+  // W3C traceparent, propagated across the whole pipeline.
+  string traceparent = 5;
+
+  // Stable across retries of the same logical event.
+  string idempotency_key = 6;
+}

@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package trackline.v1;
+
+import "trackline/v1/common.proto";
+
+option go_package = "github.com/helios/trackline/gen/trackline/v1;tracklinev1";
+
+// Device -> ingest. The hot path. Every field here is multiplied by device count
+// times emission rate, so additions are expensive.
+
+message TelemetryPoint {
+  string device_id = 1;
+
+  // Unix milliseconds, set by the device. Devices have unreliable clocks.
+  int64 recorded_at = 2;
+
+  GeoPoint position = 3;
+
+  // Kilometres per hour.
+  double speed_kph = 4;
+
+  // Degrees from true north, [0, 360).
+  double heading_deg = 5;
+
+  // Metres above sea level.
+  double altitude_m = 6;
+
+  // Horizontal accuracy in metres, as reported by the GNSS receiver.
+  double accuracy_m = 7;
+
+  double odometer_km = 8;
+  double fuel_level_pct = 9;
+  double engine_temp_c = 10;
+  bool ignition_on = 11;
+
+  // Free-form sensor readings. Cheap to add, expensive to query.
+  map<string, double> sensors = 12;
+}
+
+message StreamTelemetryRequest {
+  repeated TelemetryPoint points = 1;
+}
+
+message StreamTelemetryResponse {
+  uint32 accepted = 1;
+  uint32 rejected = 2;
+
+  // Populated only for rejected points, indexed by position in the request.
+  map<uint32, string> errors = 3;
+
+  // Server-requested pacing. Devices that ignore this are the problem.
+  uint32 retry_after_ms = 4;
+}
+
+message PublishBatchRequest {
+  string device_id = 1;
+  repeated TelemetryPoint points = 2;
+
+  // Deduplicates whole batches across device retries.
+  string batch_id = 3;
+}
+
+message PublishBatchResponse {
+  uint32 accepted = 1;
+  bool duplicate = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
+  string detail = 2;
+}
+
+service TelemetryIngest {
+  // Long-lived bidirectional stream. Preferred transport for connected devices.
+  rpc StreamTelemetry(stream StreamTelemetryRequest) returns (stream StreamTelemetryResponse);
+
+  // Unary fallback for devices that cannot hold a connection open.
+  rpc PublishBatch(PublishBatchRequest) returns (PublishBatchResponse);
+
+  rpc Health(HealthRequest) returns (HealthResponse);
+}

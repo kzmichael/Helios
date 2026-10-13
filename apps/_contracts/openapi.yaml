@@ -1,0 +1,719 @@
+openapi: 3.1.0
+
+info:
+  title: Trackline API
+  version: 1.0.0
+  description: |
+    Public REST API for the Trackline fleet telemetry platform.
+
+    All requests are tenant-scoped. The tenant is derived from the credential, never
+    from a request parameter — a caller cannot address another tenant's data by
+    changing a path.
+
+    Telemetry **ingestion** is not part of this API. Devices publish over gRPC or MQTT
+    to the ingest service; see `_proto/trackline/v1/telemetry.proto`.
+  contact:
+    name: Trackline Platform
+    url: https://trackline.local
+
+servers:
+  - url: https://trackline.local/v1
+    description: Local development
+  - url: https://trackline.{domain}/v1
+    description: Deployed environment
+    variables:
+      domain:
+        default: example.test
+
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+
+tags:
+  - name: Fleets
+  - name: Vehicles
+  - name: Positions
+  - name: Drivers
+  - name: Geofences
+  - name: Alerts
+  - name: Billing
+
+paths:
+  /fleets:
+    get:
+      tags: [Fleets]
+      summary: List fleets
+      operationId: listFleets
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paged fleets
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Fleet' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [Fleets]
+      summary: Create a fleet
+      operationId: createFleet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FleetInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fleet' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /fleets/{fleetId}:
+    parameters:
+      - $ref: '#/components/parameters/FleetId'
+    get:
+      tags: [Fleets]
+      summary: Get a fleet
+      operationId: getFleet
+      responses:
+        '200':
+          description: Fleet
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fleet' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Fleets]
+      summary: Update a fleet
+      operationId: updateFleet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FleetInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fleet' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Fleets]
+      summary: Delete a fleet
+      operationId: deleteFleet
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /vehicles:
+    get:
+      tags: [Vehicles]
+      summary: List vehicles
+      operationId: listVehicles
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: fleetId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, maintenance, retired] }
+        - name: q
+          in: query
+          description: Free-text match on registration or external reference.
+          schema: { type: string, maxLength: 64 }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [updatedAt, registration, externalRef]
+            default: updatedAt
+      responses:
+        '200':
+          description: Paged vehicles
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Vehicle' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Vehicles]
+      summary: Create a vehicle
+      operationId: createVehicle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vehicle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: Tenant device quota exceeded
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /vehicles/{vehicleId}:
+    parameters:
+      - $ref: '#/components/parameters/VehicleId'
+    get:
+      tags: [Vehicles]
+      summary: Get a vehicle
+      operationId: getVehicle
+      responses:
+        '200':
+          description: Vehicle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vehicle' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Vehicles]
+      summary: Update a vehicle
+      operationId: updateVehicle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vehicle' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /vehicles/{vehicleId}/history:
+    parameters:
+      - $ref: '#/components/parameters/VehicleId'
+    get:
+      tags: [Positions]
+      summary: Position history for a vehicle
+      operationId: getVehicleHistory
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 1000 }
+      responses:
+        '200':
+          description: Ordered ascending by recordedAt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TelemetryPoint' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /positions:
+    get:
+      tags: [Positions]
+      summary: Current position of every vehicle
+      description: |
+        Backs the live map. Returns last-known position, not history. Results older
+        than the tenant's staleness threshold are still returned, flagged via `stale`.
+      operationId: listPositions
+      parameters:
+        - name: bbox
+          in: query
+          description: 'Bounding box filter: minLon,minLat,maxLon,maxLat'
+          schema: { type: string, pattern: '^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$' }
+        - name: fleetId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current positions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Position' }
+                  generatedAt: { type: string, format: date-time }
+
+  /drivers:
+    get:
+      tags: [Drivers]
+      summary: List drivers
+      operationId: listDrivers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paged drivers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Driver' }
+
+  /geofences:
+    get:
+      tags: [Geofences]
+      summary: List geofences
+      operationId: listGeofences
+      responses:
+        '200':
+          description: Geofences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Geofence' }
+    post:
+      tags: [Geofences]
+      summary: Create a geofence
+      operationId: createGeofence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GeofenceInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Geofence' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /alerts:
+    get:
+      tags: [Alerts]
+      summary: List alerts
+      operationId: listAlerts
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: severity
+          in: query
+          schema: { type: string, enum: [info, warning, critical] }
+        - name: acknowledged
+          in: query
+          schema: { type: boolean }
+        - name: vehicleId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Paged alerts, newest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Alert' }
+
+  /alerts/{alertId}/acknowledge:
+    parameters:
+      - name: alertId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Alerts]
+      summary: Acknowledge an alert
+      operationId: acknowledgeAlert
+      responses:
+        '200':
+          description: Acknowledged
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Alert' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already acknowledged
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /usage:
+    get:
+      tags: [Billing]
+      summary: Daily usage for the current tenant
+      operationId: getUsage
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Usage rows, one per day
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/UsageDay' }
+
+  /invoices:
+    get:
+      tags: [Billing]
+      summary: List invoices
+      operationId: listInvoices
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paged invoices, newest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Invoice' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Trackline-Key
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    FleetId:
+      name: fleetId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VehicleId:
+      name: vehicleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid credential
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not found within this tenant
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflicts with existing state
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: Tenant rate limit exceeded
+      headers:
+        Retry-After:
+          schema: { type: integer }
+        X-RateLimit-Remaining:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+
+    Problem:
+      type: object
+      description: RFC 9457 problem detail.
+      required: [type, title, status]
+      properties:
+        type:   { type: string, format: uri }
+        title:  { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        traceId: { type: string }
+
+    Page:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page:     { type: integer }
+        pageSize: { type: integer }
+        total:    { type: integer }
+
+    Fleet:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: [string, 'null'] }
+        depotLat:    { type: [number, 'null'] }
+        depotLon:    { type: [number, 'null'] }
+        vehicleCount: { type: integer }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    FleetInput:
+      type: object
+      required: [name]
+      properties:
+        name:        { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        depotLat:    { type: number, minimum: -90, maximum: 90 }
+        depotLon:    { type: number, minimum: -180, maximum: 180 }
+
+    Vehicle:
+      type: object
+      required: [id, fleetId, externalRef, registration, status]
+      properties:
+        id:            { type: string, format: uuid }
+        fleetId:       { type: string, format: uuid }
+        externalRef:   { type: string }
+        registration:  { type: string }
+        make:          { type: [string, 'null'] }
+        model:         { type: [string, 'null'] }
+        year:          { type: [integer, 'null'] }
+        vehicleType:   { type: string, enum: [truck, van, car, bike, trailer] }
+        status:        { type: string, enum: [active, maintenance, retired] }
+        speedLimitKph: { type: number }
+        device:        { $ref: '#/components/schemas/DeviceSummary' }
+        createdAt:     { type: string, format: date-time }
+        updatedAt:     { type: string, format: date-time }
+
+    VehicleInput:
+      type: object
+      required: [fleetId, externalRef, registration]
+      properties:
+        fleetId:       { type: string, format: uuid }
+        externalRef:   { type: string, minLength: 1, maxLength: 64 }
+        registration:  { type: string, minLength: 1, maxLength: 32 }
+        make:          { type: string, maxLength: 64 }
+        model:         { type: string, maxLength: 64 }
+        year:          { type: integer, minimum: 1950, maximum: 2100 }
+        vehicleType:   { type: string, enum: [truck, van, car, bike, trailer] }
+        status:        { type: string, enum: [active, maintenance, retired] }
+        speedLimitKph: { type: number, minimum: 5, maximum: 200 }
+
+    DeviceSummary:
+      type: [object, 'null']
+      properties:
+        id:         { type: string, format: uuid }
+        serial:     { type: string }
+        firmware:   { type: string }
+        status:     { type: string, enum: [provisioned, active, offline, decommissioned] }
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+
+    Position:
+      type: object
+      required: [vehicleId, lat, lon, recordedAt]
+      properties:
+        vehicleId:    { type: string, format: uuid }
+        registration: { type: string }
+        lat:          { type: number }
+        lon:          { type: number }
+        speedKph:     { type: number }
+        headingDeg:   { type: number }
+        ignitionOn:   { type: boolean }
+        recordedAt:   { type: string, format: date-time }
+        stale:        { type: boolean, description: True when older than the freshness threshold. }
+
+    TelemetryPoint:
+      type: object
+      required: [recordedAt, lat, lon]
+      properties:
+        recordedAt:   { type: string, format: date-time }
+        lat:          { type: number }
+        lon:          { type: number }
+        speedKph:     { type: number }
+        headingDeg:   { type: number }
+        altitudeM:    { type: [number, 'null'] }
+        accuracyM:    { type: [number, 'null'] }
+        odometerKm:   { type: [number, 'null'] }
+        fuelLevelPct: { type: [number, 'null'] }
+        engineTempC:  { type: [number, 'null'] }
+        ignitionOn:   { type: boolean }
+
+    Driver:
+      type: object
+      required: [id, fullName, licenceNumber]
+      properties:
+        id:            { type: string, format: uuid }
+        fullName:      { type: string }
+        licenceNumber: { type: string }
+        phone:         { type: [string, 'null'] }
+        email:         { type: [string, 'null'], format: email }
+        status:        { type: string, enum: [active, inactive] }
+
+    Geofence:
+      type: object
+      required: [id, name, kind, boundary]
+      properties:
+        id:          { type: string, format: uuid }
+        fleetId:     { type: [string, 'null'], format: uuid }
+        name:        { type: string }
+        kind:        { type: string, enum: [inclusion, exclusion] }
+        boundary:    { $ref: '#/components/schemas/GeoJsonPolygon' }
+        centroidLat: { type: number }
+        centroidLon: { type: number }
+        radiusM:     { type: integer }
+        dwellThresholdS: { type: integer }
+        enabled:     { type: boolean }
+
+    GeofenceInput:
+      type: object
+      required: [name, kind, boundary]
+      properties:
+        name:     { type: string, minLength: 1, maxLength: 120 }
+        fleetId:  { type: string, format: uuid }
+        kind:     { type: string, enum: [inclusion, exclusion] }
+        boundary: { $ref: '#/components/schemas/GeoJsonPolygon' }
+        dwellThresholdS: { type: integer, minimum: 0, maximum: 86400 }
+
+    GeoJsonPolygon:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          const: Polygon
+        coordinates:
+          type: array
+          description: Array of linear rings; each ring is an array of [lon, lat] pairs.
+          items:
+            type: array
+            minItems: 4
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: { type: number }
+
+    Alert:
+      type: object
+      required: [id, vehicleId, alertType, severity, triggeredAt]
+      properties:
+        id:             { type: string, format: uuid }
+        ruleId:         { type: [string, 'null'], format: uuid }
+        vehicleId:      { type: string, format: uuid }
+        geofenceId:     { type: [string, 'null'], format: uuid }
+        alertType:
+          type: string
+          enum: [geofence_enter, geofence_exit, geofence_dwell, speeding, idle, offline]
+        severity:       { type: string, enum: [info, warning, critical] }
+        summary:        { type: string }
+        payload:        { type: object, additionalProperties: true }
+        positionLat:    { type: [number, 'null'] }
+        positionLon:    { type: [number, 'null'] }
+        triggeredAt:    { type: string, format: date-time }
+        acknowledgedAt: { type: [string, 'null'], format: date-time }
+        resolvedAt:     { type: [string, 'null'], format: date-time }
+
+    UsageDay:
+      type: object
+      required: [usageDate]
+      properties:
+        usageDate:       { type: string, format: date }
+        telemetryPoints: { type: integer }
+        activeDevices:   { type: integer }
+        apiRequests:     { type: integer }
+        storageBytes:    { type: integer }
+
+    Invoice:
+      type: object
+      required: [id, number, periodStart, periodEnd, status, totalMinor, currency]
+      properties:
+        id:           { type: string, format: uuid }
+        number:       { type: string }
+        periodStart:  { type: string, format: date }
+        periodEnd:    { type: string, format: date }
+        currency:     { type: string, minLength: 3, maxLength: 3 }
+        subtotalMinor: { type: integer, description: Amount in minor units. Never a float. }
+        taxMinor:     { type: integer }
+        totalMinor:   { type: integer }
+        status:       { type: string, enum: [draft, issued, paid, void] }
+        issuedAt:     { type: [string, 'null'], format: date-time }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              description:    { type: string }
+              quantity:       { type: number }
+              unitPriceMinor: { type: integer }
+              amountMinor:    { type: integer }

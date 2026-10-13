@@ -1,0 +1,48 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Terraform/OpenTofu state and provider caches
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!*.tfvars.example
+
+# Kubernetes credentials and local certificates
+kubeconfig*
+*.kubeconfig
+certs/
+.dev-keys/
+
+# Language and build output
+node_modules/
+dist/
+build/
+target/
+vendor/
+.venv/
+__pycache__/
+coverage/
+.next/
+
+# Generated protobuf output
+apps/gen/
+apps/*/gen/
+!apps/gen/
+apps/gen/*
+!apps/gen/go/
+apps/gen/go/*
+!apps/gen/go/go.mod
+!apps/gen/go/go.sum
+
+# Local tooling and operating-system files
+.mise/
+.DS_Store
+.vscode/
+.idea/

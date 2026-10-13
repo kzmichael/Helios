@@ -1,0 +1,722 @@
+﻿# HELIOS — Phase 0 Backlog
+# Foundations & Application. Status: GROOMED — ready to work.
+#
+# Owner legend:  operator = you (all infra/automation)   po = delivered to you (app source)
+# Estimates:     S <= 2h   |   M <= 1 day   |   L <= 3 days
+# Work top-to-bottom within an epic unless depends_on says otherwise.
+
+phase: 0
+name: Foundations & Application
+goal: >
+  Trackline runs end to end on the local machine over HTTPS, every service is
+  containerised to a hardened standard, and the operator can explain every moving part
+  from memory. No cloud account is used and no domain is purchased.
+
+epics:
+  - id: E0.0
+    name: Inputs
+    outcome: Application source exists to build against.
+  - id: E0.1
+    name: Repository & toolchain foundation
+    outcome: A safe, reproducible place to work.
+  - id: E0.2
+    name: Knowledge foundation
+    outcome: The operator understands what they are about to build.
+  - id: E0.3
+    name: Containerisation
+    outcome: Every service ships as a small, hardened, multi-arch image.
+  - id: E0.4
+    name: Local stack
+    outcome: The full product runs locally with realistic load.
+  - id: E0.5
+    name: Local TLS & private CA
+    outcome: HTTPS everywhere locally, with a trust chain the operator created.
+  - id: E0.6
+    name: Developer experience & automation
+    outcome: One command up, one command down, reproducible on a clean machine.
+  - id: E0.7
+    name: Phase closure
+    outcome: Decisions recorded, diagram drawn, lessons captured.
+
+stories:
+
+# ───────────────────────────── E0.0 Inputs ─────────────────────────────
+
+  - id: HEL-0.0.1
+    title: Application source delivered
+    type: chore
+    epic: E0.0
+    owner: po
+    persona: App Developer
+    value: There is something real to containerise, run, and later break.
+    depends_on: []
+    estimate: L
+    description: >
+      Delivery of the Phase 0 core: protobuf contracts and event schemas, SQL schema and
+      seed data, OpenAPI spec, and the six services — edge-gateway (Go), ingest (Go),
+      fleet-api (TypeScript), notifier (Rust), web (Next.js), device-sim (Go).
+      Seeded weaknesses are included and are NOT documented.
+    acceptance_criteria:
+      - Each service builds and starts from source with documented prerequisites.
+      - A README per service states its purpose, ports, env vars, and dependencies.
+      - Protobuf and OpenAPI contracts are present and self-consistent.
+      - Schema and seed data produce at least 3 tenants across all three tiers.
+    done_when:
+      - Operator can run each service individually and see it start cleanly.
+
+# ────────────────────── E0.1 Repository & toolchain ──────────────────────
+
+  - id: HEL-0.1.1
+    title: Initialise the public repository
+    type: story
+    epic: E0.1
+    owner: operator
+    persona: Platform Owner
+    value: >
+      A public repo unlocks unlimited Actions minutes and free GHCR, and forces the
+      discipline of never committing anything sensitive.
+    depends_on: [SPK-0.5]
+    study: ["05_STUDY_GUIDE.md#git--repo-hygiene"]
+    estimate: S
+    skills: [git, github]
+    description: >
+      Create the helios repository as public. Establish the directory skeleton from the
+      README, a LICENSE, and ignore rules that make committing secrets or state
+      difficult by default.
+    acceptance_criteria:
+      - Repository is public, with branch protection requiring a PR to merge to main.
+      - MFA is enabled on the GitHub account.
+      - .gitignore excludes at minimum: # "*.tfstate*", "*.tfvars", ".env*", "kubeconfig*", "*.pem", "*.key".
+      - .gitattributes normalises line endings and marks generated files.
+      - Directory skeleton matches the layout documented in the README.
+    done_when:
+      - "`git status` is clean on a fresh clone."
+      - A deliberate attempt to commit a file named test.tfstate is ignored by git.
+
+  - id: HEL-0.1.2
+    title: Pin the toolchain
+    type: story
+    epic: E0.1
+    owner: operator
+    persona: App Developer
+    value: >
+      "Works on my machine" is a class of bug that can be eliminated once, at the start,
+      instead of debugged repeatedly for months.
+    depends_on: [HEL-0.1.1]
+    estimate: S
+    skills: [mise, bash]
+    description: >
+      Declare every tool and its exact version in a committed config, so the local
+      environment and CI resolve to identical versions.
+    acceptance_criteria:
+      - A committed .mise.toml pins Go, Node, Python, Rust, kubectl, helm, terraform/tofu, k6, and gitleaks.
+      - Versions are exact, not ranges.
+      - "`mise install` on a clean machine produces a working environment with no manual steps."
+    done_when:
+      - "`mise doctor` reports no problems."
+      - Tool versions are reproducible from the repo alone.
+
+  - id: HEL-0.1.3
+    title: Prevent secrets from entering history
+    type: story
+    epic: E0.1
+    owner: operator
+    persona: Security Engineer
+    value: >
+      A secret committed to a public repo is compromised permanently — rotation is the
+      only remedy, and history rewriting does not help once it is cloned.
+    depends_on: [HEL-0.1.1]
+    study: ["05_STUDY_GUIDE.md#git--repo-hygiene"]
+    estimate: S
+    skills: [gitleaks, git]
+    description: >
+      Install gitleaks as a pre-commit hook with a committed configuration. Understand
+      explicitly that a client-side hook is a convenience, not a control — the real
+      control arrives in Phase 1 CI.
+    acceptance_criteria:
+      - gitleaks runs on every commit via a committed hook configuration.
+      - A deliberately planted AWS-shaped key is blocked before it is committed.
+      - The repo's full history is scanned once and is clean.
+    done_when:
+      - Operator can state in one sentence why this hook is not a security control.
+
+  - id: HEL-0.1.4
+    title: Establish the container runtime baseline
+    type: story
+    epic: E0.1
+    owner: operator
+    persona: App Developer
+    value: On a 16 GB machine, runtime overhead directly determines how much stack can run.
+    depends_on: []
+    estimate: S
+    skills: [orbstack, docker]
+    description: >
+      Replace Docker Desktop with OrbStack. Record baseline idle memory and CPU so the
+      cost of the local stack can be measured later rather than guessed.
+    acceptance_criteria:
+      - Docker Desktop is removed; OrbStack serves the docker socket.
+      - "`docker buildx ls` shows a builder supporting linux/amd64 and linux/arm64."
+      - Idle memory footprint is recorded in the repo.
+    done_when:
+      - "`docker run --rm hello-world` succeeds."
+
+# ────────────────────── E0.2 Knowledge foundation ──────────────────────
+
+  - id: SPK-0.1
+    title: "Spike: Linux processes, cgroups and namespaces"
+    type: spike
+    epic: E0.2
+    owner: operator
+    persona: On-call Engineer
+    value: >
+      Every container problem in this project is a Linux problem wearing a costume.
+      Without this, later phases become cargo-culting.
+    depends_on: []
+    study: ["05_STUDY_GUIDE.md#linux-internals--target-l3", "Learn-Better/01_Linux_System_Engineering/"]
+    estimate: L
+    skills: [linux]
+    timebox: 2 sessions
+    description: >
+      Study process lifecycle, signals, cgroups v2, the six namespace types, overlayfs,
+      and file descriptor limits. Practice with ps, ss, lsof, strace, dmesg, journalctl.
+    acceptance_criteria:
+      - "Can answer from memory: why does a container die when PID 1 exits?"
+      - "Can answer from memory: prove a process was OOM-killed and identify the cause."
+      - "Can answer from memory: df says full, du disagrees — explain."
+      - Can name all six namespace types and what each isolates.
+      - Has demonstrated CPU throttling on a running container and read the cgroup counters.
+    done_when:
+      - Notes committed to Learn-Better/01_Linux_System_Engineering/.
+      - Self-check answered out loud without reference material.
+
+  - id: SPK-0.2
+    title: "Spike: Container images, layers and hardening"
+    type: spike
+    epic: E0.2
+    owner: operator
+    persona: Security Engineer
+    value: Image decisions made now are inherited by every later phase, including supply chain.
+    depends_on: [SPK-0.1]
+    study: ["05_STUDY_GUIDE.md#containers--target-l3"]
+    estimate: M
+    skills: [docker]
+    timebox: 1 session
+    description: >
+      Study layering and the union filesystem, cache invalidation order, multi-stage
+      builds, base image tradeoffs (scratch / distroless / alpine / debian-slim), the
+      musl vs glibc problem, capabilities, and multi-arch manifests.
+    acceptance_criteria:
+      - "Can explain why reordering two Dockerfile lines changes build time by an order of magnitude."
+      - Can state when alpine is the wrong choice and why.
+      - Can explain ENTRYPOINT vs CMD and the PID 1 signal problem.
+      - Has inspected a real image's layers and identified wasted space.
+    done_when:
+      - Notes committed; self-check answered from memory.
+
+  - id: SPK-0.3
+    title: "Spike: Defensive Bash"
+    type: spike
+    epic: E0.2
+    owner: operator
+    persona: Platform Owner
+    value: Every automation in this project is glued together with shell; bad shell fails silently.
+    depends_on: []
+    study: ["05_STUDY_GUIDE.md#bash--target-l3"]
+    estimate: S
+    skills: [bash]
+    timebox: 1 session
+    description: >
+      Study set -euo pipefail and what each flag prevents, quoting rules, traps and
+      cleanup, exit codes, and idempotent script design.
+    acceptance_criteria:
+      - Can explain what each of -e, -u, and -o pipefail prevents, with an example of each failing without it.
+      - Can explain why "$var" and $var differ, with a case where it matters.
+      - Has written a script that is safe to run twice.
+    done_when:
+      - Notes committed; self-check answered from memory.
+
+  - id: SPK-0.4
+    title: "Spike: PKI and trust chains"
+    type: spike
+    epic: E0.2
+    owner: operator
+    persona: Security Engineer
+    value: >
+      Running your own CA before meeting ACME means Phase 1 certificates and Phase 4
+      Vault PKI are familiar rather than magical.
+    depends_on: []
+    study: ["05_STUDY_GUIDE.md#pki-fundamentals--target-l2"]
+    estimate: M
+    skills: [tls, openssl]
+    timebox: 1 session
+    description: >
+      Study asymmetric keys, certificate chains, X.509 fields (CN vs SAN), CSRs, and the
+      OS/browser trust store.
+    acceptance_criteria:
+      - Can draw the trust chain from browser to leaf certificate.
+      - Can explain why CN is ignored in favour of SAN.
+      - Has inspected a real certificate with openssl and read its SANs, validity, and issuer.
+    done_when:
+      - Notes committed; self-check answered from memory.
+
+  - id: SPK-0.5
+    title: "Spike: Repository safety for public repos"
+    type: spike
+    epic: E0.2
+    owner: operator
+    persona: Security Engineer
+    value: This project's repo is public from day one; mistakes here are irreversible.
+    depends_on: []
+    study: ["05_STUDY_GUIDE.md#git--repo-hygiene"]
+    estimate: S
+    skills: [git]
+    timebox: half session
+    description: >
+      Study what must never be committed, why history rewriting does not undo exposure,
+      and how .gitignore and .gitattributes actually behave.
+    acceptance_criteria:
+      - Can list the file classes that must never be committed in this project.
+      - Can explain why rotating an exposed credential is mandatory even after a force-push.
+    done_when:
+      - Self-check answered from memory.
+
+# ────────────────────── E0.3 Containerisation ──────────────────────
+
+  - id: HEL-0.3.1
+    title: Reference Dockerfile for a Go service
+    type: story
+    epic: E0.3
+    owner: operator
+    persona: Security Engineer
+    value: >
+      One well-built image becomes the template for the rest; getting it wrong replicates
+      the mistake six times.
+    depends_on: [HEL-0.0.1, SPK-0.2, HEL-0.1.4]
+    study: ["05_STUDY_GUIDE.md#containers--target-l3"]
+    estimate: M
+    skills: [docker, go]
+    description: >
+      Build edge-gateway as the reference image: multi-stage, distroless or scratch
+      runtime, non-root user, no shell, BuildKit cache mounts, correct layer ordering.
+    acceptance_criteria:
+      - Final image is under 50 MB.
+      - "`docker run --rm <image> id -u` returns a non-zero UID."
+      - Image contains no shell — "`docker run --rm <image> /bin/sh`" fails.
+      - Changing application source without changing dependencies does not invalidate the dependency layer.
+      - Container exits within 10s of SIGTERM, without SIGKILL.
+    done_when:
+      - Build is reproducible from a clean cache.
+      - Operator can explain each Dockerfile line's purpose.
+
+  - id: HEL-0.3.2
+    title: Containerise the remaining services
+    type: story
+    epic: E0.3
+    owner: operator
+    persona: App Developer
+    value: A uniform image standard means one set of operational behaviours to learn, not six.
+    depends_on: [HEL-0.3.1]
+    estimate: L
+    skills: [docker, node, rust, nextjs]
+    description: >
+      Apply the reference pattern to ingest (Go), fleet-api (TypeScript), notifier (Rust),
+      web (Next.js), and device-sim (Go). Each runtime has a different trap — Node's
+      native modules, Rust's long compile and musl linking, Next.js standalone output.
+    acceptance_criteria:
+      - Every service image is non-root with no shell.
+      - Every image is under 150 MB (web may be larger; justify in the ADR if so).
+      - All services handle SIGTERM gracefully.
+      - Build times are recorded before and after cache optimisation.
+    done_when:
+      - "`docker compose build` completes with no warnings."
+
+  - id: HEL-0.3.3
+    title: Multi-architecture builds
+    type: story
+    epic: E0.3
+    owner: operator
+    persona: Platform Owner
+    value: >
+      Local machine is arm64, cloud nodes may be amd64. Discovering this in Phase 1 is
+      an avoidable outage.
+    depends_on: [HEL-0.3.2]
+    estimate: M
+    skills: [docker, buildx]
+    description: >
+      Produce manifest lists covering linux/amd64 and linux/arm64 for every service.
+      Identify any base image or dependency that blocks one architecture.
+    acceptance_criteria:
+      - "`docker buildx imagetools inspect` shows both architectures for every service."
+      - Any architecture-specific workaround is documented with its reason.
+      - Cross-architecture build time is recorded.
+    done_when:
+      - A manifest list builds for all six services in one command.
+
+  - id: HEL-0.3.4
+    title: Verify the image hardening standard
+    type: story
+    epic: E0.3
+    owner: operator
+    persona: Security Engineer
+    value: A standard that is not verified is a preference, and preferences decay.
+    depends_on: [HEL-0.3.3]
+    estimate: S
+    skills: [bash, docker]
+    description: >
+      Write a script that asserts the image standard across all services, so the standard
+      is enforced mechanically rather than by memory. This becomes a CI gate in Phase 1.
+    acceptance_criteria:
+      - Script checks: non-root UID, absence of shell, size ceiling, both architectures present, no :latest base tags.
+      - Script exits non-zero on any violation and names the violating image.
+      - Script passes against all six images.
+    done_when:
+      - Deliberately breaking one image causes the script to fail with a clear message.
+
+# ────────────────────── E0.4 Local stack ──────────────────────
+
+  - id: HEL-0.4.1
+    title: Stand up the data layer locally
+    type: story
+    epic: E0.4
+    owner: operator
+    persona: App Developer
+    value: Nothing else can run until state has somewhere to live.
+    depends_on: [HEL-0.1.4]
+    estimate: M
+    skills: [docker-compose, postgres, redis, kafka]
+    description: >
+      Postgres, Redis, and single-broker Kafka in KRaft mode (no ZooKeeper), with named
+      volumes for persistence and healthchecks that gate dependent services.
+    acceptance_criteria:
+      - All three start healthy from a cold start with no manual intervention.
+      - Data survives "`docker compose restart`"; "`docker compose down -v`" clears it.
+      - Kafka runs in KRaft mode with no ZooKeeper container present.
+      - Healthchecks are real readiness checks, not sleeps.
+    done_when:
+      - Operator can connect to each with a CLI client and run a trivial command.
+
+  - id: HEL-0.4.2
+    title: Schema migration and seed data
+    type: story
+    epic: E0.4
+    owner: operator
+    persona: App Developer
+    value: >
+      Migrations as a first-class step from day one avoids the far more painful retrofit
+      when they must run inside a delivery pipeline in Phase 2.
+    depends_on: [HEL-0.4.1, HEL-0.0.1]
+    estimate: M
+    skills: [postgres, sql, migrations]
+    description: >
+      Wire a migration tool (Atlas or Flyway) as a startup step, plus seeding of tenants
+      across all three tiers, vehicles, and geofences.
+    acceptance_criteria:
+      - Migrations run automatically on a clean database and are idempotent on re-run.
+      - Seed data creates at least 3 tenants covering Free, Pro, and Enterprise tiers.
+      - Migration state is visible and queryable.
+      - A deliberately failing migration halts startup rather than proceeding.
+    done_when:
+      - Dropping the volume and restarting reproduces the exact same state.
+
+  - id: HEL-0.4.3
+    title: Wire the application services
+    type: story
+    epic: E0.4
+    owner: operator
+    persona: Fleet Manager
+    value: The first moment the product actually exists.
+    depends_on: [HEL-0.3.2, HEL-0.4.2]
+    estimate: M
+    skills: [docker-compose, networking]
+    description: >
+      All six services in compose with correct dependency ordering, healthchecks,
+      configuration via environment, and a defined resource budget per service.
+    acceptance_criteria:
+      - "`docker compose up` reaches a fully healthy state from cold with no manual steps."
+      - Startup ordering is enforced by healthchecks, not by sleeps or restarts.
+      - No service holds a hardcoded credential; all config comes from environment.
+      - Total memory footprint is recorded and under 8 GB.
+    done_when:
+      - The web dashboard loads and renders data from fleet-api.
+
+  - id: HEL-0.4.4
+    title: Generate realistic telemetry load
+    type: story
+    epic: E0.4
+    owner: operator
+    persona: Device
+    value: >
+      A system with no traffic teaches nothing. This is the instrument used for every
+      later performance and chaos exercise.
+    depends_on: [HEL-0.4.3]
+    estimate: S
+    skills: [go, docker-compose]
+    description: >
+      Run device-sim at 500 devices with configurable rate and behaviour profiles.
+    acceptance_criteria:
+      - 500 simulated devices emit telemetry continuously without error.
+      - Device count and emission rate are configurable without a rebuild.
+      - Positions are visible moving on the live map.
+      - Sustained resource usage at 500 devices is recorded.
+    done_when:
+      - The stack runs for 30 minutes under load with no crashes or unbounded growth.
+
+  - id: HEL-0.4.5
+    title: Capture outbound notifications locally
+    type: story
+    epic: E0.4
+    owner: operator
+    persona: On-call Engineer
+    value: >
+      Real mail must never leave a lab environment on a .xyz domain — the reputation
+      damage is slow, permanent, and invisible until it matters.
+    depends_on: [HEL-0.4.3]
+    estimate: S
+    skills: [docker-compose, smtp]
+    description: >
+      Route notifier's email output to a local Mailpit sink, and its webhooks to a local
+      request inspector.
+    acceptance_criteria:
+      - Notifier delivers to Mailpit; no external SMTP connection is ever attempted.
+      - Alert emails are inspectable in a local UI.
+      - Webhook payloads are captured and viewable.
+    done_when:
+      - Triggering a geofence alert produces a visible message in the sink.
+
+# ────────────────────── E0.5 Local TLS & private CA ──────────────────────
+
+  - id: HEL-0.5.1
+    title: Create a private certificate authority
+    type: story
+    epic: E0.5
+    owner: operator
+    persona: Security Engineer
+    value: >
+      Understanding trust from the root down makes ACME in Phase 1 and Vault PKI in
+      Phase 4 comprehensible rather than ritual.
+    depends_on: [SPK-0.4]
+    estimate: M
+    skills: [tls, mkcert, openssl]
+    description: >
+      Establish a local CA with mkcert, install it into the system trust store, and issue
+      a leaf certificate with correct SANs for the local hostnames.
+    acceptance_criteria:
+      - Local CA root is installed in the system trust store.
+      - A leaf certificate is issued covering all local service hostnames as SANs.
+      - "`openssl x509 -text`" #output can be read and explained field by field.
+      - CA key material is excluded from git.
+    done_when:
+      - Operator can explain what would happen if this CA's private key leaked.
+
+  - id: HEL-0.5.2
+    title: Serve the local stack over HTTPS
+    type: story
+    epic: E0.5
+    owner: operator
+    persona: App Developer
+    value: >
+      Developing against HTTP and deploying to HTTPS hides an entire class of bug —
+      mixed content, cookie flags, redirect loops, HSTS.
+    depends_on: [HEL-0.5.1, HEL-0.4.3]
+    estimate: M
+    skills: [tls, nginx, networking]
+    description: >
+      Put a reverse proxy in front of the stack terminating TLS with the local CA's
+      certificate, with /etc/hosts entries mirroring the planned production hostnames.
+    acceptance_criteria:
+      - "https://trackline.local (or equivalent) loads with a browser-trusted certificate."
+      - Plain HTTP redirects to HTTPS.
+      - Secure and HttpOnly cookie flags are set and work.
+      - WebSocket connections upgrade successfully through the proxy.
+    done_when:
+      - No certificate warning appears in the browser.
+      - Local hostnames mirror the Phase 1 production naming scheme.
+
+# ────────────────── E0.6 Developer experience & automation ──────────────────
+
+  - id: HEL-0.6.1
+    title: Backlog sync to Azure DevOps Boards
+    type: story
+    epic: E0.6
+    owner: operator
+    persona: Platform Owner
+    value: >
+      Tracking that requires manual copying will be abandoned within two weeks. This is
+      also the first real automation exercise of the project.
+    depends_on: [HEL-0.1.1, SPK-0.3]
+    study: ["06_WAYS_OF_WORKING.md"]
+    estimate: M
+    skills: [bash, azure-cli, azure-devops, yaml]
+    description: >
+      Read backlog/*.yaml and create or update ADO work items via `az boards`. Phases
+      become Epics, epics become Features, stories and spikes become User Stories.
+      Parent/child links come from the hierarchy; Predecessor/Successor links come from
+      depends_on. Must be idempotent — re-running changes nothing unless the YAML changed.
+      The script writes definition fields only and never touches state, effort, or
+      iteration, which are owned by the board.
+    acceptance_criteria:
+      - Running the script creates the full Phase 0 hierarchy with descriptions, acceptance criteria, and tags.
+      - Re-running the script produces no duplicates and no spurious revisions.
+      - Editing a story's YAML updates the corresponding work item on the next run.
+      - depends_on relationships appear as Predecessor/Successor links on the board.
+      - Moving a work item to Active and re-running the sync does not reset its state.
+      - Script fails clearly if az is unauthenticated, the org/project default is unset, or the YAML is invalid.
+    done_when:
+      - The board reflects backlog/phase-0.yaml exactly, generated rather than typed.
+      - The dependency view shows a correct ordering for Phase 0.
+
+  - id: HEL-0.6.2
+    title: Single entrypoint for all local operations
+    type: story
+    epic: E0.6
+    owner: operator
+    persona: App Developer
+    value: >
+      Commands that live only in shell history are lost knowledge. This file becomes the
+      project's operational interface and the seed of Phase 7's golden path.
+    depends_on: [HEL-0.4.4, HEL-0.5.2, SPK-0.3]
+    estimate: M
+    skills: [bash, make, task]
+    description: >
+      A Taskfile or Makefile exposing up, down, build, test, lint, logs, seed, load, and
+      nuke — self-documenting, with no undocumented targets.
+    acceptance_criteria:
+      - "`make help` (or `task --list`) lists every target with a description."
+      - "`make up` brings the full stack to healthy from cold in one command."
+      - "`make nuke` removes all containers, volumes, and networks, leaving nothing behind."
+      - Targets are idempotent and safe to re-run.
+      - No target requires the operator to remember an argument.
+    done_when:
+      - A cold start to working stack requires exactly one command.
+
+  - id: HEL-0.6.3
+    title: Reproducible development container
+    type: story
+    epic: E0.6
+    owner: operator
+    persona: App Developer
+    value: Proves the environment is defined by the repo rather than by machine history.
+    depends_on: [HEL-0.1.2]
+    estimate: S
+    skills: [devcontainers, docker]
+    description: >
+      A devcontainer providing the full pinned toolchain, with docker socket access for
+      the local stack.
+    acceptance_criteria:
+      - Devcontainer builds and opens with the complete toolchain available.
+      - The local stack can be driven from inside the container.
+      - No tool is installed manually after the container starts.
+    done_when:
+      - Operator can work entirely inside the devcontainer for one full session.
+
+  - id: HEL-0.6.4
+    title: Prove clean-machine reproducibility
+    type: story
+    epic: E0.6
+    owner: operator
+    persona: Platform Owner
+    value: >
+      The core claim of Phase 0 is reproducibility. Untested reproducibility is an
+      assumption, and assumptions fail at the worst time.
+    depends_on: [HEL-0.6.2, HEL-0.6.3]
+    estimate: M
+    skills: [docker, bash]
+    description: >
+      From a pristine state — all images, volumes, caches, and trust store entries
+      removed — follow only the README and reach a working stack. Every undocumented
+      step discovered is a defect to fix.
+    acceptance_criteria:
+      - Working stack reached following only the README, with no tribal knowledge.
+      - Every gap found is fixed in the documentation, not remembered.
+      - Total cold-start time is recorded.
+    done_when:
+      - A second clean run needs no further documentation changes.
+
+# ────────────────────── E0.7 Phase closure ──────────────────────
+
+  - id: HEL-0.7.1
+    title: "ADR: container base image strategy"
+    type: story
+    epic: E0.7
+    owner: operator
+    persona: Security Engineer
+    value: >
+      This decision is inherited by supply-chain work in Phase 4 and by every future
+      service. Its reasoning must outlive its author's memory.
+    depends_on: [HEL-0.3.4]
+    study: ["adr/0001-record-architecture-decisions.md"]
+    estimate: S
+    skills: [writing]
+    description: >
+      Record the base image decision per runtime, with alternatives considered and
+      consequences accepted.
+    acceptance_criteria:
+      - Follows the ADR-0001 format exactly.
+      - States alternatives considered and why each lost.
+      - Consequences section lists at least one genuine downside.
+      - Takes the next free ADR number.
+    done_when:
+      - A stranger could apply the standard to a new service without asking questions.
+
+  - id: HEL-0.7.2
+    title: Architecture diagram as code
+    type: story
+    epic: E0.7
+    owner: operator
+    persona: App Developer
+    value: A diagram that cannot be diffed rots; a diagram in a PR gets reviewed.
+    depends_on: [HEL-0.4.4]
+    estimate: S
+    skills: [mermaid, documentation]
+    description: >
+      Produce the Trackline component and request-flow diagrams in Mermaid, committed
+      and rendered in the docs.
+    acceptance_criteria:
+      - Component diagram shows all services and data stores with their protocols.
+      - A sequence diagram traces device telemetry through to the map.
+      - Diagrams are text, committed, and render in GitHub.
+    done_when:
+      - Operator can reproduce the request path from memory, then verify against the diagram.
+
+  - id: HEL-0.7.3
+    title: Phase 0 retrospective
+    type: story
+    epic: E0.7
+    owner: operator
+    persona: Platform Owner
+    value: >
+      Unexamined difficulty repeats. The retro is the mechanism that converts friction
+      into a changed process.
+    depends_on: [HEL-0.6.4]
+    estimate: S
+    skills: [writing]
+    description: >
+      Record what broke, what took longer than expected, what was learned, and what
+      changes for Phase 1.
+    acceptance_criteria:
+      - Written to ops/postmortems/phase-0-retro.md.
+      - Lists at least three things that did not go as planned.
+      - Each has a concrete change for the next phase, not a resolution to "be careful".
+      - Records actual effort against estimates, per story.
+    done_when:
+      - At least one process change is agreed and reflected in 06_WAYS_OF_WORKING.md.
+
+  - id: HEL-0.7.4
+    title: Phase 0 exit review
+    type: story
+    epic: E0.7
+    owner: operator
+    persona: Platform Owner
+    value: Phases end on evidence, not on feeling finished.
+    depends_on: [HEL-0.7.1, HEL-0.7.2, HEL-0.7.3]
+    estimate: S
+    skills: []
+    description: >
+      Walk the Phase 0 exit criteria in 03_ROADMAP.md and the Phase 0 self-check in
+      05_STUDY_GUIDE.md. Anything failing either returns to the backlog.
+    acceptance_criteria:
+      - Every Phase 0 exit criterion is demonstrably met.
+      - Every Phase 0 self-check question is answered from memory, out loud.
+      - Any gap is written as a new story rather than waived.
+    done_when:
+      - Phase 1 backlog is groomed and Phase 0 is closed.

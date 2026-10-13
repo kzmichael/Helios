@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package trackline.v1;
+
+import "trackline/v1/common.proto";
+import "trackline/v1/telemetry.proto";
+
+option go_package = "github.com/helios/trackline/gen/trackline/v1;tracklinev1";
+
+// Kafka event schemas. Topic names are given per message; partition keys are chosen
+// so that all events for one vehicle land on one partition and stay ordered.
+
+// topic: trackline.telemetry.raw          key: vehicle_id
+message TelemetryReceived {
+  EventMeta meta = 1;
+  string vehicle_id = 2;
+  string device_id = 3;
+  TelemetryPoint point = 4;
+
+  // Unix milliseconds at the ingest edge. Compare with point.recorded_at to measure
+  // device clock skew and transport delay separately.
+  int64 ingested_at = 5;
+}
+
+// topic: trackline.events.geofence        key: vehicle_id
+message GeofenceEvent {
+  EventMeta meta = 1;
+  string vehicle_id = 2;
+  string geofence_id = 3;
+
+  enum Transition {
+    TRANSITION_UNSPECIFIED = 0;
+    TRANSITION_ENTER = 1;
+    TRANSITION_EXIT = 2;
+    TRANSITION_DWELL = 3;
+  }
+  Transition transition = 4;
+
+  GeoPoint position = 5;
+  int64 dwell_seconds = 6;
+}
+
+// topic: trackline.events.violation       key: vehicle_id
+message SpeedingEvent {
+  EventMeta meta = 1;
+  string vehicle_id = 2;
+  double speed_kph = 3;
+  double limit_kph = 4;
+  int64 duration_seconds = 5;
+  GeoPoint position = 6;
+}
+
+// topic: trackline.events.violation       key: vehicle_id
+message IdleEvent {
+  EventMeta meta = 1;
+  string vehicle_id = 2;
+  int64 idle_seconds = 3;
+  GeoPoint position = 4;
+}
+
+// topic: trackline.events.vehicle         key: vehicle_id
+message VehicleOfflineEvent {
+  EventMeta meta = 1;
+  string vehicle_id = 2;
+  string device_id = 3;
+  int64 last_seen_at = 4;
+  int64 silent_seconds = 5;
+}
+
+// topic: trackline.alerts.raised          key: tenant_id
+message AlertRaised {
+  EventMeta meta = 1;
+  string alert_id = 2;
+  string rule_id = 3;
+  string vehicle_id = 4;
+
+  // One of: geofence_enter, geofence_exit, geofence_dwell, speeding, idle, offline.
+  string alert_type = 5;
+
+  Severity severity = 6;
+  string summary = 7;
+
+  // Type-specific detail, serialised JSON. Kept opaque so new alert types do not
+  // require a schema change on every consumer.
+  string payload_json = 8;
+}
+
+// topic: trackline.notifications.requested   key: alert_id
+message NotificationRequested {
+  EventMeta meta = 1;
+  string alert_id = 2;
+  string channel_id = 3;
+
+  // One of: email, webhook, sms.
+  string channel_kind = 4;
+
+  string recipient = 5;
+  string subject = 6;
+  string body = 7;
+
+  // Increments on each redelivery of the same notification.
+  uint32 attempt = 8;
+}
+
+// topic: trackline.notifications.delivered   key: alert_id
+message NotificationDelivered {
+  EventMeta meta = 1;
+  string alert_id = 2;
+  string channel_id = 3;
+  bool success = 4;
+  uint32 attempt = 5;
+  int32 status_code = 6;
+  string error = 7;
+  int64 latency_ms = 8;
+}
+
+// topic: trackline.usage.recorded         key: tenant_id
+message UsageRecorded {
+  EventMeta meta = 1;
+
+  // ISO date, UTC. The day the usage is attributed to, not the day it was counted.
+  string usage_date = 2;
+
+  uint64 telemetry_points = 3;
+  uint32 active_devices = 4;
+  uint64 api_requests = 5;
+  uint64 storage_bytes = 6;
+}
