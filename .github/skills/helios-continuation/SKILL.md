@@ -1,47 +1,15 @@
 ---
 name: helios-continuation
-description: Continue Project HELIOS from the canonical repository with its architecture, ownership rules, roadmap, toolchain, ADO workflow, and current status.
+description: Resume Project HELIOS from the current checkout, or refresh its cross-session handoff when the user says "agent update".
 disable-model-invocation: true
 ---
-# HELIOS Continuation Prompt
+# HELIOS Continuation Skill
 
-You are continuing an existing long-running project called **HELIOS**.
+The repository root `AGENTS.md` defines always-on agent behavior. `docs/CONTINUATION.md` is the current progress snapshot and next-task pointer. Read those first; use this skill for continuation-specific workflow only. The status text later in this file is an old snapshot and is not authoritative.
 
 ## Canonical repository
 
-The only active repository is:
-
-```text
-/Users/kshitizmichael/Helios
-```
-
-Do all future code, documentation, backlog, Git, and validation work there.
-
-Do not use or modify this old scaffold/archive:
-
-```text
-/Users/kshitizmichael/Limitless/Major Project/helios
-```
-
-Do not use the parent `/Users/kshitizmichael/Limitless` repository for HELIOS commits or
-pushes. It contains unrelated workspace material.
-
-Before any edit, always verify:
-
-```bash
-git rev-parse --show-toplevel
-git status --short --branch
-git remote -v
-```
-
-The first command must return:
-
-```text
-/Users/kshitizmichael/Helios
-```
-
-Treat existing user changes as intentional. Never reset, checkout, delete, or overwrite
-user work without explicit permission.
+Use the Git root of the current workspace as canonical. Do not assume an absolute path, operating system, or sibling/archive location. Before editing, inspect `git rev-parse --show-toplevel` and `git status --short --branch`. Preserve existing user changes; never reset, checkout, delete, or overwrite user work without permission.
 
 ---
 
@@ -183,51 +151,13 @@ scripts/          operator-owned automation
 .github/          CI/CD workflows and repository configuration
 ```
 
-Read these files before making project recommendations:
-
-1. `README.md`
-2. `START_HERE.md`
-3. `docs/00_CHARTER.md`
-4. `docs/01_APPLICATION.md`
-5. `docs/02_TECH_MATRIX.md`
-6. `docs/03_ROADMAP.md`
-7. `docs/04_ENVIRONMENTS.md`
-8. `docs/05_STUDY_GUIDE.md`
-9. `docs/06_WAYS_OF_WORKING.md`
-10. `docs/07_REPOSITORY_BLUEPRINT.md`
-11. `backlog/phase-0.yaml`
-12. `apps/README.md`
-13. `apps/ANNOTATIONS.md`
-
-Use the roadmap for execution order, the study guide for learning topics, the blueprint
-for file/folder ownership, and ADO for work-item state.
+Do not reread the entire repository to resume. Start with `docs/CONTINUATION.md`, then inspect only the relevant roadmap/backlog section and files for the active task. The roadmap defines order; local backlog YAML defines acceptance criteria.
 
 ---
 
 ## Work tracking
 
-Azure DevOps Boards is the tracker:
-
-```text
-https://dev.azure.com/Kugleblitz712/Helios
-```
-
-The process is Agile:
-
-- Phase → Epic
-- `E0.x` → Feature
-- Story/spike → User Story
-- optional sub-step → Task
-- `depends_on` → Predecessor/Successor links
-
-Backlog YAML owns definition fields: title, description, value, persona, acceptance
-criteria, dependencies, study references, and tags.
-
-ADO owns execution fields: state, iteration, effort, comments, and actual progress.
-The intended sync is one-way and must not overwrite ADO execution state.
-
-Only one phase is groomed ahead. Phase 0 is groomed; later phases should not be expanded
-into speculative detail before the current work teaches us what needs to change.
+Use the checked-in backlog and roadmap as the working plan. The user has asked to defer ADO synchronization; do not access or update ADO unless explicitly asked. Only one phase should be groomed ahead.
 
 ---
 
@@ -275,7 +205,7 @@ exec mise exec -- gitleaks git --pre-commit --staged --redact -c security/gitlea
 
 Before marking secret-scanning work complete:
 
-1. Confirm the Git root is `/Users/kshitizmichael/Helios`.
+1. Confirm the Git root is this HELIOS checkout.
 2. Confirm `git config --get core.hooksPath` returns `.githooks`.
 3. Confirm `.githooks/pre-commit` is executable.
 4. Confirm the gitleaks config exists.
@@ -283,18 +213,18 @@ Before marking secret-scanning work complete:
 6. Stage it and attempt a commit.
 7. Confirm the hook rejects the commit.
 8. Remove the test fixture completely.
-9. Scan the HELIOS history, not the parent `Limitless` history.
-10. Record evidence in ADO #26.
+9. Scan this repository's history, not a parent workspace's history.
+10. Record evidence in `docs/CONTINUATION.md` when the user requests an `agent update`.
 
 Do not claim success merely because gitleaks prints `no leaks found`. Confirm that the
 pre-commit hook actually ran and rejected a staged test secret.
 
 ---
 
-## Current project status (snapshot: 2026-10-12)
+## Historical snapshot (stale; do not use as current status)
 
-Refresh Git, files, and ADO before treating this snapshot as current. The canonical
-root was just verified as `/Users/kshitizmichael/Helios`, branch
+This section is retained only as historical context. Do not follow its status or next actions. Use `docs/CONTINUATION.md` and verify relevant facts in the current checkout. Its old canonical
+root was `/Users/kshitizmichael/Helios`, branch
 `feature/Initial-setup`, remote `https://github.com/kzmichael/Helios.git`. The
 worktree still has substantial existing changes, including modified `LICENSE` and
 `README.md` and many untracked project files. Preserve everything; do not commit,
@@ -386,16 +316,8 @@ explicitly change that boundary.
   them through testing and observability.
 - When blocked, inspect the concrete error and repair the same slice before expanding scope.
 
-## First response in a new session
+## `agent update` workflow
 
-Do not immediately write code. First:
+When the user says `agent update`, follow the root `AGENTS.md` procedure and refresh `docs/CONTINUATION.md` from the current conversation, Git status/diff, and actual validation results. Separate user-reported completion from independently verified results, identify blockers, and leave one immediate next task with its acceptance checks. Do not commit or push; the user will push from the machine they are using. Do not consult ADO unless asked.
 
-1. Verify the canonical Git root and status.
-2. Inspect the current remote.
-3. Read the current `.mise.toml`, gitleaks hook/config, and `docs/03_ROADMAP.md`.
-4. Check ADO items relevant to the current task, including #25–#27 and #33–#36
-   while containerising.
-5. Distinguish the operator's reported progress, repository evidence, image/runtime
-   verification, and ADO execution state in a short status update.
-6. Give only the next one or two steps with their acceptance evidence. Respect the
-   operator's request to do and learn the platform work themselves.
+At session start, read the handoff, verify the current Git root/status, and continue from its next task. If the user gives a different task, follow that instruction and update the handoff when asked.
