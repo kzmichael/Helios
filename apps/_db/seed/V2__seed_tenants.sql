@@ -105,7 +105,7 @@ SELECT
     ('de000000-0000-4000-8000-' || substr(replace(v.id::text, '-', ''), 21, 12))::uuid,
     v.tenant_id,
     v.id,
-    'TLD-' || upper(substr(replace(v.id::text, '-', ''), 21, 10)),
+    'TLD-' || upper(substr(replace(v.id::text, '-', ''), 21, 12)),
     CASE WHEN v.vehicle_type = 'trailer' THEN 'TL-50' ELSE 'TL-100' END,
     (ARRAY['1.4.2', '1.5.0', '1.5.1'])[1 + abs(hashtext(v.id::text) % 3)],
     encode(digest('dev-token-' || v.id::text, 'sha256'), 'hex'),
