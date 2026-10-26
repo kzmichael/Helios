@@ -1,8 +1,9 @@
 // WebSocket subscription for live vehicle positions — the mechanism that makes
 // the "position freshness p99 < 5s" SLO (docs/01_APPLICATION.md §5) visible on
-// screen. Falls back to nothing automatically; the map page decides whether to
-// poll REST instead while disconnected.
-import type { Position } from './api-client';
+// screen. The server side is fleet-api's /v1/positions/stream, reached through
+// edge-gateway, which accepts the access token as ?token= on this path only,
+// because a browser WebSocket cannot send an Authorization header.
+import { DEV_TOKEN_STORAGE_KEY, type Position } from './api-client';
 
 export type PositionHandler = (position: Position) => void;
 
@@ -12,41 +13,48 @@ export interface WsClient {
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE ?? 'ws://localhost:8080/v1';
 
-/**
- * NOTE — the `/v1/positions/stream` endpoint this connects to does not exist
- * in fleet-api yet. apps/_contracts/openapi.yaml currently documents `/positions`
- * as a plain REST poll endpoint only. Adding the WebSocket upgrade path to
- * fleet-api (or a small dedicated realtime service) is unfinished application
- * work — track it as a follow-up story before this file is relied upon.
- */
-export function connectPositions(onPosition: PositionHandler, onError?: (e: Event) => void): WsClient {
-  const token = typeof window !== 'undefined' ? window.localStorage.getItem('trackline_dev_token') : null;
-  const url = `${WS_BASE}/positions/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 30_000;
 
+/**
+ * Connects, and keeps reconnecting until closed. Reconnects back off
+ * exponentially with full jitter, so a gateway restart does not bring every open
+ * dashboard back in the same instant (the same reasoning as notifier's retry.rs).
+ * `onStatus(true)` fires on every (re)connect: the caller should refetch the REST
+ * snapshot then, because frames sent while disconnected are not replayed.
+ */
+export function connectPositions(
+  onPosition: PositionHandler,
+  onStatus?: (connected: boolean) => void,
+): WsClient {
   let socket: WebSocket | null = null;
   let closedByCaller = false;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const connect = () => {
-    socket = new WebSocket(url);
+    // Read the token on every attempt: it may have been refreshed since the last one.
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem(DEV_TOKEN_STORAGE_KEY) : null;
+    socket = new WebSocket(`${WS_BASE}/positions/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+
+    socket.onopen = () => {
+      attempt = 0;
+      onStatus?.(true);
+    };
 
     socket.onmessage = (event) => {
       try {
-        const position = JSON.parse(event.data) as Position;
-        onPosition(position);
+        onPosition(JSON.parse(event.data) as Position);
       } catch {
         // Malformed frame — drop it, do not crash the subscription.
       }
     };
 
-    socket.onerror = (e) => onError?.(e);
-
     socket.onclose = () => {
-      if (!closedByCaller) {
-        // Simple reconnect with a fixed delay. A real backoff/jitter policy
-        // (matching notifier's retry.rs reasoning) is worth adding once this
-        // is exercised under real network conditions.
-        setTimeout(connect, 2000);
-      }
+      onStatus?.(false);
+      if (closedByCaller) return;
+      const ceiling = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** attempt++);
+      timer = setTimeout(connect, Math.random() * ceiling);
     };
   };
 
@@ -55,6 +63,7 @@ export function connectPositions(onPosition: PositionHandler, onError?: (e: Even
   return {
     close: () => {
       closedByCaller = true;
+      if (timer) clearTimeout(timer);
       socket?.close();
     },
   };

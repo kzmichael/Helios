@@ -14,20 +14,33 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { Pool } from 'pg';
 import { PG_POOL } from '../common/db.module';
+import { Audited } from '../common/audit';
+import { MinRole, RolesGuard } from '../common/http';
 import { TenantGuard } from '../common/tenant-guard';
+import { assertFleetInTenant } from '../fleets/fleets.service';
 
 interface GeoJsonPolygon {
   type: 'Polygon';
   coordinates: number[][][];
 }
 
-interface GeofenceInput {
-  name: string;
+class GeofenceInput {
+  @IsString() @MinLength(1) @MaxLength(120)
+  name!: string;
+
+  @IsOptional() @IsUUID()
   fleetId?: string;
-  kind: 'inclusion' | 'exclusion';
-  boundary: GeoJsonPolygon;
+
+  @IsIn(['inclusion', 'exclusion'])
+  kind!: 'inclusion' | 'exclusion';
+
+  @IsObject()
+  boundary!: GeoJsonPolygon;
+
+  @IsOptional() @IsInt() @Min(0) @Max(86400)
   dwellThresholdS?: number;
 }
 
@@ -37,8 +50,14 @@ function validatePolygon(boundary: GeoJsonPolygon): void {
     throw new UnprocessableEntityException('boundary.type must be "Polygon"');
   }
   const ring = boundary.coordinates?.[0];
-  if (!ring || ring.length < 4) {
+  if (!Array.isArray(ring) || ring.length < 4) {
     throw new UnprocessableEntityException('boundary must have a closed ring of at least 4 points');
+  }
+  for (const pt of ring) {
+    const [lon, lat] = Array.isArray(pt) ? pt : [];
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) {
+      throw new UnprocessableEntityException('boundary points must be [lon, lat] within -180..180 / -90..90');
+    }
   }
   const [firstLon, firstLat] = ring[0];
   const [lastLon, lastLat] = ring[ring.length - 1];
@@ -55,6 +74,18 @@ function centroidOf(boundary: GeoJsonPolygon): { lat: number; lon: number } {
     { lon: 0, lat: 0 },
   );
   return { lat: sum.lat / points.length, lon: sum.lon / points.length };
+}
+
+/** Radius of the smallest circle around the centroid that contains the polygon, in metres. */
+function radiusOf(boundary: GeoJsonPolygon, centroid: { lat: number; lon: number }): number {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const metres = ([lon, lat]: number[]) => {
+    const dLat = rad(lat - centroid.lat);
+    const dLon = rad(lon - centroid.lon);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(centroid.lat)) * Math.cos(rad(lat)) * Math.sin(dLon / 2) ** 2;
+    return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+  return Math.max(1, Math.ceil(Math.max(...boundary.coordinates[0].map(metres))));
 }
 
 @Injectable()
@@ -74,6 +105,7 @@ export class GeofencesService {
 
   async create(tenantId: string, input: GeofenceInput) {
     validatePolygon(input.boundary);
+    if (input.fleetId) await assertFleetInTenant(this.pool, tenantId, input.fleetId);
     const centroid = centroidOf(input.boundary);
 
     const { rows } = await this.pool.query(
@@ -91,7 +123,7 @@ export class GeofencesService {
         JSON.stringify(input.boundary),
         centroid.lat,
         centroid.lon,
-        800, // Phase 0 default; a real radius derivation is a Phase 2 refinement.
+        radiusOf(input.boundary, centroid),
         input.dwellThresholdS ?? 300,
       ],
     );
@@ -109,7 +141,7 @@ export class GeofencesService {
 }
 
 @Controller('v1/geofences')
-@UseGuards(TenantGuard)
+@UseGuards(TenantGuard, RolesGuard)
 export class GeofencesController {
   constructor(private readonly geofences: GeofencesService) {}
 
@@ -119,6 +151,8 @@ export class GeofencesController {
   }
 
   @Post()
+  @MinRole('operator')
+  @Audited('geofence.created', 'geofence')
   create(@Req() req: Request, @Body() body: GeofenceInput) {
     return this.geofences.create(req.tenant!.tenantId, body);
   }

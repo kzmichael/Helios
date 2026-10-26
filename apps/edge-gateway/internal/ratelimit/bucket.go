@@ -13,6 +13,8 @@ package ratelimit
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -69,6 +71,13 @@ return {allowed, tokens}
 type Decision struct {
 	Allowed   bool
 	Remaining float64
+
+	// Limit is the tier's requests-per-minute; RetryAfter is how long until one
+	// more request would be allowed (zero when Allowed); Reset is when the bucket
+	// is full again. All three are zero when FailedOpen.
+	Limit      int
+	RetryAfter time.Duration
+	Reset      time.Time
 	// FailedOpen is true when Redis was unreachable and the request was
 	// allowed as a deliberate availability-over-fairness trade-off.
 	FailedOpen bool
@@ -110,7 +119,39 @@ func (l *Limiter) Allow(ctx context.Context, tenantID, tier string) Decision {
 	}
 
 	allowed, _ := values[0].(int64)
-	remaining, _ := values[1].(float64)
+	remaining, _ := toFloat(values[1])
 
-	return Decision{Allowed: allowed == 1, Remaining: remaining}
+	d := Decision{
+		Allowed:   allowed == 1,
+		Remaining: remaining,
+		Limit:     limit.RequestsPerMinute,
+	}
+	if !d.Allowed {
+		d.RetryAfter = secondsDuration((1 - remaining) / refillPerSec)
+	}
+	d.Reset = time.Now().Add(secondsDuration((float64(limit.BurstTokens) - remaining) / refillPerSec))
+	return d
+}
+
+// secondsDuration rounds up to whole seconds, because Retry-After is an integer.
+func secondsDuration(s float64) time.Duration {
+	if s <= 0 {
+		return 0
+	}
+	return time.Duration(math.Ceil(s)) * time.Second
+}
+
+// toFloat handles Lua numbers coming back as either int64 or a string, depending
+// on whether the value happened to be integral.
+func toFloat(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		return f, err == nil
+	}
+	return 0, false
 }

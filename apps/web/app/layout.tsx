@@ -14,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <nav style={{ display: 'flex', gap: '1rem', padding: '1rem', borderBottom: '1px solid #ddd' }}>
           <a href="/dashboard">Dashboard</a>
           <a href="/map">Live Map</a>
+          <a href="/vehicles">Vehicles</a>
           <a href="/alerts">Alerts</a>
           {process.env.TRACKLINE_DEV_AUTH_ENABLED === 'true' && <DevSignIn />}
         </nav>

@@ -30,6 +30,12 @@ export default function DashboardPage() {
           <li key={f.id}>
             <strong>{f.name}</strong>
             {f.description ? ` — ${f.description}` : ''}
+            {f.vehicleCount !== undefined && (
+              <>
+                {' '}
+                · <a href={`/vehicles?fleetId=${f.id}`}>{f.vehicleCount} vehicles</a>
+              </>
+            )}
           </li>
         ))}
       </ul>

@@ -2,6 +2,7 @@
 //! mechanics; retry/backoff/DLQ decisions live one level up in main.rs, which
 //! calls these and interprets the Result.
 pub mod email;
+pub mod sms;
 pub mod webhook;
 
 /// Common outcome every channel reports back to the dispatch loop.

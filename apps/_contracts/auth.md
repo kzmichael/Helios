@@ -1,26 +1,26 @@
 # Authentication, Authorization & Tenant Context
 
-Contract between the application and the platform. The application defines *what* must
+Contract between the application and the platform. The application defines _what_ must
 be true; enforcing it at the infrastructure layer is platform work.
 
 ---
 
 ## 1. Principals
 
-| Principal | Authenticates with | Issued by | Lifetime |
-|---|---|---|---|
-| **Human user** | OIDC access token (JWT, RS256) | Identity provider | 15 min access / 8 h refresh |
-| **Device** | Bearer device token | Provisioning at device registration | Until revoked |
-| **Machine client** | API key (`X-Trackline-Key`) | Tenant admin via API | Until revoked or expired |
-| **Internal service** | Short-lived workload identity token | Platform | ≤ 1 h |
+| Principal            | Authenticates with                  | Issued by                           | Lifetime                    |
+| -------------------- | ----------------------------------- | ----------------------------------- | --------------------------- |
+| **Human user**       | OIDC access token (JWT, RS256)      | Identity provider                   | 15 min access / 8 h refresh |
+| **Device**           | Bearer device token                 | Provisioning at device registration | Until revoked               |
+| **Machine client**   | API key (`X-Trackline-Key`)         | Tenant admin via API                | Until revoked or expired    |
+| **Internal service** | Short-lived workload identity token | Platform                            | ≤ 1 h                       |
 
 Identity provider by phase:
 
-| Phase | Provider |
-|---|---|
-| 0 | Local static RS256 key pair; `fleet-api` mints dev tokens. No real IdP. |
-| 1–4 | Self-hosted OIDC (Dex or Keycloak) |
-| 5+ | Microsoft Entra ID, federated |
+| Phase | Provider                                                                |
+| ----- | ----------------------------------------------------------------------- |
+| 0     | Local static RS256 key pair; `fleet-api` mints dev tokens. No real IdP. |
+| 1–4   | Self-hosted OIDC (Dex or Keycloak)                                      |
+| 5+    | Microsoft Entra ID, federated                                           |
 
 The application only ever sees a **JWT it can validate against a JWKS endpoint**. Swapping
 the provider must require no application change — that is the point of using OIDC rather
@@ -79,13 +79,13 @@ client ──JWT──▶ edge-gateway ──X-Trackline-Tenant──▶ fleet-a
 
 Internal headers set by the gateway:
 
-| Header | Content |
-|---|---|
-| `X-Trackline-Tenant` | Tenant UUID from `tid` |
-| `X-Trackline-Subject` | `sub` |
-| `X-Trackline-Roles` | Comma-separated roles |
-| `X-Trackline-Request-Id` | Correlation id |
-| `traceparent` | W3C trace context |
+| Header                   | Content                |
+| ------------------------ | ---------------------- |
+| `X-Trackline-Tenant`     | Tenant UUID from `tid` |
+| `X-Trackline-Subject`    | `sub`                  |
+| `X-Trackline-Roles`      | Comma-separated roles  |
+| `X-Trackline-Request-Id` | Correlation id         |
+| `traceparent`            | W3C trace context      |
 
 ### The rule that matters most
 
@@ -101,7 +101,7 @@ Two consequences for the platform:
 - Internal services must be unreachable from outside the cluster. Phase 4 enforces this
   with default-deny NetworkPolicy.
 - Phase 9's service mesh replaces header trust with mTLS identity. Until then, the
-  network boundary *is* the control.
+  network boundary _is_ the control.
 
 ---
 
@@ -112,12 +112,12 @@ the service authorizes.
 
 ### Roles
 
-| Role | Read | Write | Manage users | Billing |
-|---|---|---|---|---|
-| `owner` | ✅ | ✅ | ✅ | ✅ |
-| `admin` | ✅ | ✅ | ✅ | ❌ |
-| `operator` | ✅ | ✅ | ❌ | ❌ |
-| `viewer` | ✅ | ❌ | ❌ | ❌ |
+| Role       | Read | Write | Manage users | Billing |
+| ---------- | ---- | ----- | ------------ | ------- |
+| `owner`    | ✅   | ✅    | ✅           | ✅      |
+| `admin`    | ✅   | ✅    | ✅           | ❌      |
+| `operator` | ✅   | ✅    | ❌           | ❌      |
+| `viewer`   | ✅   | ❌    | ❌           | ❌      |
 
 ### Tenant isolation
 
@@ -141,7 +141,7 @@ Devices present `Authorization: Bearer <device-token>` on gRPC and MQTT connecti
 - Shown exactly once, at provisioning
 
 **Why SHA-256 and not bcrypt here, when passwords use bcrypt:** bcrypt's cost exists to
-slow brute force against *low-entropy* human-chosen secrets. A 256-bit random token has no
+slow brute force against _low-entropy_ human-chosen secrets. A 256-bit random token has no
 meaningful brute-force surface, and the ingest path verifies tokens at very high rate —
 a deliberately slow hash would become the bottleneck. Different threat model, different
 primitive. API keys follow the same reasoning.
@@ -150,19 +150,36 @@ Device tokens are verified against a cache, not the database, on the hot path. R
 is therefore eventually consistent, bounded by the cache TTL. That is an accepted
 trade-off and should be recorded in an ADR.
 
+### API keys (machine clients)
+
+Presented as `X-Trackline-Key: <prefix>.<secret>`; `prefix` is public and unique
+(`api_key.prefix`), the secret is shown once. Only `SHA-256(secret)` is stored, for the
+reasons above. `edge-gateway` hashes the secret itself and asks `fleet-api`
+(`POST /internal/api-keys/verify` with the prefix and the hash, internal only) whether
+that is a live key — not revoked, not expired, tenant `active` — and which tenant, tier
+and roles it carries (`operator` if the key has `fleet:write`, otherwise `viewer`). The
+answer is cached for 30 s, so revocation is eventually consistent. An unreachable
+`fleet-api` is a `503`, never an allow.
+
+### WebSocket credentials
+
+A browser cannot set `Authorization` on a WebSocket. On `/v1/positions/stream` **only**,
+`edge-gateway` also accepts the access token as a `token` query parameter and removes it
+before forwarding. The token is then validated exactly like a bearer token.
+
 ---
 
 ## 6. Secrets this system needs
 
 The application declares what it requires; the platform decides where they live.
 
-| Secret | Consumer | Rotation |
-|---|---|---|
-| OIDC signing key pair | Identity provider | 90 days, overlapping |
-| Database credentials | `fleet-api`, `ingest` | Phase 4: dynamic, ≤ 1 h |
-| Kafka credentials | `ingest`, `notifier` | Phase 4 |
-| Webhook signing secret | `notifier` | Per tenant, on demand |
-| SMTP credentials | `notifier` | Provider-managed |
+| Secret                 | Consumer              | Rotation                |
+| ---------------------- | --------------------- | ----------------------- |
+| OIDC signing key pair  | Identity provider     | 90 days, overlapping    |
+| Database credentials   | `fleet-api`, `ingest` | Phase 4: dynamic, ≤ 1 h |
+| Kafka credentials      | `ingest`, `notifier`  | Phase 4                 |
+| Webhook signing secret | `notifier`            | Per tenant, on demand   |
+| SMTP credentials       | `notifier`            | Provider-managed        |
 
 **No service reads a secret from an environment variable baked into an image.** How they
 arrive — External Secrets, Vault injection, CSI driver — is a platform decision made in
@@ -200,10 +217,10 @@ secrets, full request bodies for auth endpoints.
 
 Recorded honestly rather than hidden:
 
-| Gap | Closed in |
-|---|---|
-| Downstream services trust gateway headers with no cryptographic proof | Phase 9 (mesh mTLS / SPIFFE) |
-| Device token revocation is eventually consistent | Accepted; needs an ADR |
-| No refresh-token rotation or reuse detection | Phase 4 |
-| No MFA for human users | Phase 4, delegated to the IdP |
-| Rate limiting is per tenant, not per principal | Phase 2 |
+| Gap                                                                   | Closed in                     |
+| --------------------------------------------------------------------- | ----------------------------- |
+| Downstream services trust gateway headers with no cryptographic proof | Phase 9 (mesh mTLS / SPIFFE)  |
+| Device token revocation is eventually consistent                      | Accepted; needs an ADR        |
+| No refresh-token rotation or reuse detection                          | Phase 4                       |
+| No MFA for human users                                                | Phase 4, delegated to the IdP |
+| Rate limiting is per tenant, not per principal                        | Phase 2                       |

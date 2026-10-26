@@ -273,6 +273,30 @@ paths:
                     items: { $ref: '#/components/schemas/Position' }
                   generatedAt: { type: string, format: date-time }
 
+  /positions/stream:
+    get:
+      tags: [Positions]
+      summary: Live position stream (WebSocket)
+      description: |
+        Upgrade to a WebSocket to receive every position of the caller's tenant as it
+        arrives. Each text frame is one JSON `Position`. Frames are best-effort: a slow
+        reader loses frames rather than slowing the stream, and a newer position for
+        the same vehicle always supersedes an older one. Fetch `/positions` first for
+        the current state, then apply frames on top of it.
+
+        Browsers cannot set an `Authorization` header on a WebSocket, so on this path
+        only, `edge-gateway` also accepts the access token as a `token` query
+        parameter. It is removed before the request is forwarded.
+      operationId: streamPositions
+      parameters:
+        - name: token
+          in: query
+          description: Access token, for clients that cannot send `Authorization`.
+          schema: { type: string }
+      responses:
+        '101': { description: Switching Protocols }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /drivers:
     get:
       tags: [Drivers]

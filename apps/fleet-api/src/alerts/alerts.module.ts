@@ -5,6 +5,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  HttpCode,
   Inject,
   Injectable,
   Module,
@@ -16,9 +17,23 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { IsBoolean, IsIn, IsOptional, IsUUID } from 'class-validator';
 import { Pool } from 'pg';
 import { PG_POOL } from '../common/db.module';
+import { Audited } from '../common/audit';
+import { MinRole, PageQuery, RolesGuard, ToBoolean, UuidParam, isUuid } from '../common/http';
 import { TenantGuard } from '../common/tenant-guard';
+
+class AlertListQuery extends PageQuery {
+  @IsOptional() @IsIn(['info', 'warning', 'critical'])
+  severity?: string;
+
+  @IsOptional() @ToBoolean() @IsBoolean()
+  acknowledged?: boolean;
+
+  @IsOptional() @IsUUID()
+  vehicleId?: string;
+}
 
 @Injectable()
 export class AlertsService {
@@ -47,6 +62,7 @@ export class AlertsService {
       where += ` AND vehicle_id = $${params.length}`;
     }
 
+    const filterParams = [...params];
     const offset = (page - 1) * pageSize;
     params.push(pageSize, offset);
 
@@ -60,7 +76,11 @@ export class AlertsService {
        ORDER BY triggered_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
-    return { data: rows, page, pageSize };
+    const { rows: countRows } = await this.pool.query(
+      `SELECT count(*)::int AS total FROM alert WHERE ${where}`,
+      filterParams,
+    );
+    return { data: rows, page, pageSize, total: countRows[0].total };
   }
 
   /**
@@ -83,42 +103,33 @@ export class AlertsService {
     }
 
     const { rows } = await this.pool.query(
-      `UPDATE alert SET acknowledged_at = now(), acknowledged_by = $3
+      `UPDATE alert SET acknowledged_at = now(),
+              acknowledged_by = (SELECT id FROM app_user WHERE id = $3 AND tenant_id = $1)
        WHERE tenant_id = $1 AND id = $2
        RETURNING id, alert_type AS "alertType", severity, summary,
                  triggered_at AS "triggeredAt", acknowledged_at AS "acknowledgedAt"`,
-      [tenantId, alertId, subjectId],
+      // An API key's subject is not a user; only a real user id is recorded as the acknowledger.
+      [tenantId, alertId, isUuid(subjectId) ? subjectId : null],
     );
     return rows[0];
   }
 }
 
 @Controller('v1/alerts')
-@UseGuards(TenantGuard)
+@UseGuards(TenantGuard, RolesGuard)
 export class AlertsController {
   constructor(private readonly alerts: AlertsService) {}
 
   @Get()
-  list(
-    @Req() req: Request,
-    @Query('page') page = '1',
-    @Query('pageSize') pageSize = '50',
-    @Query('severity') severity?: string,
-    @Query('acknowledged') acknowledged?: string,
-    @Query('vehicleId') vehicleId?: string,
-  ) {
-    return this.alerts.list(
-      req.tenant!.tenantId,
-      Number(page),
-      Number(pageSize),
-      severity,
-      acknowledged === undefined ? undefined : acknowledged === 'true',
-      vehicleId,
-    );
+  list(@Req() req: Request, @Query() q: AlertListQuery) {
+    return this.alerts.list(req.tenant!.tenantId, q.page, q.pageSize, q.severity, q.acknowledged, q.vehicleId);
   }
 
   @Post(':alertId/acknowledge')
-  acknowledge(@Req() req: Request, @Param('alertId') alertId: string) {
+  @HttpCode(200)
+  @MinRole('operator')
+  @Audited('alert.acknowledged', 'alert')
+  acknowledge(@Req() req: Request, @Param('alertId', UuidParam) alertId: string) {
     return this.alerts.acknowledge(req.tenant!.tenantId, alertId, req.tenant!.subjectId);
   }
 }

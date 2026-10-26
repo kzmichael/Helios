@@ -15,6 +15,7 @@ export interface Tenant {
   tier: 'free' | 'pro' | 'enterprise';
   maxDevices: number;
   maxHz: number;
+  retentionDays: number;
 }
 
 @Injectable()
@@ -23,7 +24,8 @@ export class TenantsService {
 
   async get(tenantId: string): Promise<Tenant | null> {
     const { rows } = await this.pool.query(
-      `SELECT id, slug, name, tier, max_devices AS "maxDevices", max_hz AS "maxHz"
+      `SELECT id, slug, name, tier, max_devices AS "maxDevices", max_hz AS "maxHz",
+              retention_days AS "retentionDays"
        FROM tenant WHERE id = $1 AND status = 'active'`,
       [tenantId],
     );

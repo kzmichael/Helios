@@ -3,38 +3,62 @@
 //! group details and apps/_contracts/auth.md §7 for webhook signing.
 mod channels;
 mod dlq;
+mod proto;
 mod retry;
 
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
-use rdkafka::producer::FutureProducer;
+use rdkafka::producer::{FutureProducer, FutureRecord};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use channels::email::EmailChannel;
+use channels::sms::SmsChannel;
 use channels::webhook::WebhookChannel;
 
 const REQUESTED_TOPIC: &str = "trackline.notifications.requested";
-const CONSUMER_GROUP: &str = "notification-dispatcher";
+const DELIVERED_TOPIC: &str = "trackline.notifications.delivered";
+const DEFAULT_CONSUMER_GROUP: &str = "notification-dispatcher";
 
-/// Mirrors NotificationRequested from apps/_proto/trackline/v1/events.proto.
-/// Phase 0 decodes JSON for simplicity; switching to protobuf (`prost`) is a
-/// small, contained change once the generated Rust bindings exist.
+/// A notification to deliver. Decoded from protobuf (`NotificationRequested` in
+/// apps/_proto/trackline/v1/events.proto), or from JSON for hand-made test requests.
 #[derive(Debug, Deserialize)]
-struct NotificationRequested {
+pub struct NotificationRequested {
     #[serde(rename = "alertId")]
-    alert_id: String,
+    pub alert_id: String,
     #[serde(rename = "idempotencyKey")]
-    idempotency_key: String,
+    pub idempotency_key: String,
     #[serde(rename = "channelKind")]
-    channel_kind: String, // "email" | "webhook" | "sms"
-    recipient: String,
-    subject: String,
-    body: String,
-    attempt: u32,
+    pub channel_kind: String, // "email" | "webhook" | "sms"
+    pub recipient: String,
+    pub subject: String,
+    pub body: String,
+    pub attempt: u32,
+    #[serde(rename = "tenantId", default)]
+    pub tenant_id: String,
+    #[serde(rename = "channelId", default)]
+    pub channel_id: String,
+}
+
+/// The final result of delivering one notification, reported on `notifications.delivered`.
+pub struct Outcome {
+    pub success: bool,
+    pub attempt: u32,
+    pub status_code: Option<i32>,
+    pub error: Option<String>,
+    pub latency_ms: i64,
+}
+
+/// Everything a delivery needs besides the notification itself.
+struct Channels {
+    email: EmailChannel,
+    webhook: WebhookChannel,
+    webhook_secret: Option<String>,
+    sms: Option<SmsChannel>,
 }
 
 /// In-memory idempotency guard for Phase 0. Durable, shared dedup (Redis-backed)
@@ -46,14 +70,25 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "kafka:9092".into());
+    let group_id = env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| DEFAULT_CONSUMER_GROUP.into());
     let smtp_host = env::var("SMTP_HOST").unwrap_or_else(|_| "mailpit".into());
     let smtp_port: u16 = env::var("SMTP_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(1025);
     let from_addr = env::var("SMTP_FROM").unwrap_or_else(|_| "alerts@trackline.local".into());
     let webhook_timeout: u64 = env::var("WEBHOOK_TIMEOUT_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
+    let webhook_secret = env::var("WEBHOOK_SECRET").ok().filter(|s| !s.is_empty());
+    let sms_gateway = env::var("SMS_GATEWAY_URL").ok().filter(|s| !s.is_empty());
+
+    if webhook_secret.is_none() {
+        tracing::warn!("WEBHOOK_SECRET is not set; webhook notifications will be dead-lettered");
+    }
+    if sms_gateway.is_none() {
+        tracing::warn!("SMS_GATEWAY_URL is not set; SMS notifications will be dead-lettered");
+    }
 
     let consumer: StreamConsumer = ClientConfig::new()
         .set("bootstrap.servers", &brokers)
-        .set("group.id", CONSUMER_GROUP)
+        .set("group.id", &group_id)
+        .set("auto.offset.reset", "earliest")
         // Manual commit — commit AFTER successful processing, never before.
         // Committing early is how at-least-once quietly becomes at-most-once
         // and messages get lost on a crash (kafka-topics.md §3).
@@ -68,15 +103,24 @@ async fn main() {
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", &brokers)
         .create()
-        .expect("failed to create Kafka producer (for DLQ)");
+        .expect("failed to create Kafka producer (for DLQ and delivered events)");
 
-    let email = EmailChannel::new(&smtp_host, smtp_port, &from_addr)
-        .expect("failed to build email transport");
-    let webhook = WebhookChannel::new(webhook_timeout);
+    let channels = Channels {
+        email: EmailChannel::new(&smtp_host, smtp_port, &from_addr).expect("failed to build email transport"),
+        webhook: WebhookChannel::new(webhook_timeout),
+        webhook_secret,
+        sms: sms_gateway.map(|url| {
+            let auth = match (env::var("SMS_GATEWAY_USER"), env::var("SMS_GATEWAY_PASSWORD")) {
+                (Ok(u), Ok(p)) if !u.is_empty() => Some((u, p)),
+                _ => None,
+            };
+            SmsChannel::new(&url, &env::var("SMS_FROM").unwrap_or_else(|_| "TRACKLINE".into()), auth, webhook_timeout)
+        }),
+    };
 
     let seen = SeenKeys(Mutex::new(HashSet::new()));
 
-    tracing::info!(brokers = %brokers, "notifier started, consuming {REQUESTED_TOPIC}");
+    tracing::info!(brokers = %brokers, group = %group_id, "notifier started, consuming {REQUESTED_TOPIC}");
 
     let mut terminate = tokio::signal::unix::signal(
         tokio::signal::unix::SignalKind::terminate(),
@@ -103,7 +147,7 @@ async fn main() {
                     }
                 };
 
-                let parsed: Result<NotificationRequested, _> = serde_json::from_slice(payload);
+                let parsed = proto::parse_requested(payload);
                 match parsed {
                     Err(e) => {
                         // Permanent failure — schema mismatch. Straight to DLQ,
@@ -125,7 +169,8 @@ async fn main() {
                             }
                         }
 
-                        deliver_with_retry(&notification, &email, &webhook, &producer).await;
+                        let outcome = deliver_with_retry(&notification, &channels, &producer).await;
+                        report_outcome(&producer, &notification, &outcome).await;
                     }
                 }
 
@@ -146,30 +191,37 @@ async fn main() {
 /// topic is a reasonable Phase 2 improvement.
 async fn deliver_with_retry(
     n: &NotificationRequested,
-    email: &EmailChannel,
-    webhook: &WebhookChannel,
+    channels: &Channels,
     producer: &FutureProducer,
-) {
+) -> Outcome {
     let mut attempt = n.attempt.max(1);
 
     loop {
         let result = match n.channel_kind.as_str() {
-            "email" => email.send(&n.recipient, &n.subject, &n.body).await,
-            "webhook" => webhook.send(&n.recipient, "dev-webhook-secret", &n.body).await,
+            "email" => channels.email.send(&n.recipient, &n.subject, &n.body).await,
+            "webhook" => match &channels.webhook_secret {
+                Some(secret) => channels.webhook.send(&n.recipient, secret, &n.body).await,
+                None => return give_up(producer, n, attempt, "webhook_secret_not_configured").await,
+            },
+            "sms" => match &channels.sms {
+                Some(sms) => sms.send(&n.recipient, &format!("{}\n{}", n.subject, n.body)).await,
+                None => return give_up(producer, n, attempt, "sms_gateway_not_configured").await,
+            },
             other => {
                 tracing::error!(channel_kind = other, "unsupported channel, sending to DLQ");
-                let _ = dlq::send_to_dlq(
-                    producer,
-                    n.body.as_bytes(),
-                    dlq::DlqReason { alert_id: &n.alert_id, reason: "unsupported_channel", attempts: attempt },
-                ).await;
-                return;
+                return give_up(producer, n, attempt, "unsupported_channel").await;
             }
         };
 
         if result.success {
             tracing::info!(alert_id = %n.alert_id, attempt, latency_ms = result.latency_ms, "delivered");
-            return;
+            return Outcome {
+                success: true,
+                attempt,
+                status_code: result.status_code,
+                error: None,
+                latency_ms: result.latency_ms,
+            };
         }
 
         tracing::warn!(
@@ -183,10 +235,42 @@ async fn deliver_with_retry(
                 n.body.as_bytes(),
                 dlq::DlqReason { alert_id: &n.alert_id, reason: "max_attempts_exceeded", attempts: attempt },
             ).await;
-            return;
+            return Outcome {
+                success: false,
+                attempt,
+                status_code: result.status_code,
+                error: result.error,
+                latency_ms: result.latency_ms,
+            };
         }
 
         tokio::time::sleep(retry::backoff_for_attempt(attempt)).await;
         attempt += 1;
+    }
+}
+
+/// A permanent failure: dead-letter immediately, no retries (kafka-topics.md §5).
+async fn give_up(producer: &FutureProducer, n: &NotificationRequested, attempt: u32, reason: &str) -> Outcome {
+    let _ = dlq::send_to_dlq(
+        producer,
+        n.body.as_bytes(),
+        dlq::DlqReason { alert_id: &n.alert_id, reason, attempts: attempt },
+    ).await;
+    Outcome {
+        success: false,
+        // Past the retry budget on purpose: this is final, not a failure to retry.
+        attempt: attempt.max(retry::MAX_ATTEMPTS),
+        status_code: None,
+        error: Some(reason.to_string()),
+        latency_ms: 0,
+    }
+}
+
+/// Publishes the final outcome so the platform can record what was actually sent.
+async fn report_outcome(producer: &FutureProducer, n: &NotificationRequested, outcome: &Outcome) {
+    let payload = proto::encode_delivered(n, outcome);
+    let record = FutureRecord::to(DELIVERED_TOPIC).key(&n.alert_id).payload(&payload);
+    if let Err((e, _)) = producer.send(record, Duration::from_secs(5)).await {
+        tracing::error!(error = %e, alert_id = %n.alert_id, "failed to publish delivery outcome");
     }
 }

@@ -1,0 +1,38 @@
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+  batch:
+    job:
+      # The job is launched by JobRunner, which owns the period parameter and the exit code.
+      enabled: false
+    jdbc:
+      # Idempotency comes from the invoice's natural key (tenant + period), not from
+      # batch metadata, so no batch tables are created in the Trackline database.
+      initialize-schema: never
+
+# Pricing. Amounts are integer minor units (paise); money is never a float.
+billing:
+  currency: INR
+  tax-rate-bps: 1800 # 18% GST, in basis points
+  plans:
+    free:
+      base-minor: 0
+      device-day-minor: 0
+      per-1k-points-minor: 0
+      included-points: 0
+    pro:
+      base-minor: 499900
+      device-day-minor: 1500
+      per-1k-points-minor: 40
+      included-points: 5000000
+    enterprise:
+      base-minor: 4999900
+      device-day-minor: 900
+      per-1k-points-minor: 15
+      included-points: 100000000
+
+logging:
+  level:
+    org.springframework: WARN
+    io.trackline: INFO

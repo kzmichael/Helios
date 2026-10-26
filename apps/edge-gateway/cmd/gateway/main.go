@@ -36,6 +36,7 @@ func main() {
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer rdb.Close()
 	limiter := ratelimit.New(rdb)
+	keyVerifier := auth.NewAPIKeyVerifier(cfg.FleetAPIURL)
 
 	fleetProxy, err := proxy.NewFleetAPIProxy(cfg.FleetAPIURL)
 	if err != nil {
@@ -45,7 +46,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
-	mux.Handle("/v1/", withCORS(cfg.CORSAllowedOrigins, withMiddleware(fleetProxy, validator, limiter, logger)))
+	mux.Handle("/v1/", withCORS(cfg.CORSAllowedOrigins, withMiddleware(fleetProxy, validator, keyVerifier, limiter, logger)))
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -67,54 +68,6 @@ func main() {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"ready":true}`))
-}
-
-// withMiddleware wires the chain in the order auth.md requires: strip inbound
-// trust headers, authenticate, rate-limit, then assert trusted context onto the
-// proxied request. Reordering this chain is a security bug.
-func withMiddleware(next http.Handler, validator *auth.Validator, limiter *ratelimit.Limiter, logger *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Step 1 — never trust headers the caller set themselves.
-		auth.StripInboundTrust(r)
-
-		// Step 2 — authenticate.
-		token := bearerToken(r)
-		if token == "" {
-			http.Error(w, `{"title":"missing credential","status":401}`, http.StatusUnauthorized)
-			return
-		}
-		claims, err := validator.Validate(r.Context(), token)
-		if err != nil {
-			logger.Warn("token rejected", "error", err)
-			http.Error(w, `{"title":"invalid credential","status":401}`, http.StatusUnauthorized)
-			return
-		}
-
-		// Step 3 — rate limit, per tenant per tier (limits.md §4).
-		decision := limiter.Allow(r.Context(), claims.TenantID, claims.Tier)
-		if decision.FailedOpen {
-			logger.Warn("rate limiter failed open — redis unreachable", "tenant", claims.TenantID)
-		}
-		if !decision.Allowed {
-			w.Header().Set("Retry-After", "5")
-			http.Error(w, `{"title":"rate limit exceeded","status":429}`, http.StatusTooManyRequests)
-			return
-		}
-
-		// Step 4 — only now assert trusted context onto the outbound request.
-		auth.SetAssertedContext(r, claims)
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func bearerToken(r *http.Request) string {
-	h := r.Header.Get("Authorization")
-	const prefix = "Bearer "
-	if len(h) > len(prefix) && h[:len(prefix)] == prefix {
-		return h[len(prefix):]
-	}
-	return ""
 }
 
 func waitForShutdown(srv *http.Server, logger *slog.Logger) {
