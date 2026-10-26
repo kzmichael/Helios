@@ -1,12 +1,14 @@
 # HELIOS Continuation
 
-Last updated: 2026-10-14
+Last updated: 2026-10-27
 
 This is the short-lived working handoff for resuming HELIOS across sessions and machines. `AGENTS.md` explains how agents must use and update it. Verify relevant claims against the current checkout before acting; do not treat this note as a substitute for tests or acceptance evidence.
 
 ## Current focus
 
 Phase 0, local application foundation. The user reports that containerization is complete and wants to continue the project rather than repeat that work.
+
+On 2026-10-27 the assistant implemented all remaining application work under `apps/` (the user committed it as `3c96594 Added all codes`, branch `feature/Initial-setup`, ahead of origin by 2, not pushed). The operator-owned SRE work was deliberately left untouched. The next step is the operator wiring that application into the stack and testing it.
 
 ## Recent verified work
 
@@ -16,6 +18,34 @@ Phase 0, local application foundation. The user reports that containerization is
 - `go test ./...` compiled `edge-gateway`, `ingest`, and `device-sim` after protobuf generation. The packages reported no test files.
 - The current Windows terminal has no `docker` command, so Compose and image runtime checks were not run in this session.
 
+## Application work completed 2026-10-27 (assistant)
+
+What changed, per service. Detail lives in each service README under `apps/`.
+
+- `device-sim`: plays the seeded 500-device fleet (150 seeded + 350 from the opt-in `apps/_db/load/load-fleet.sql`), scripted scenarios (`SCENARIO=speeding|offline|port-entry|hub-exit`), seeded chaos injection.
+- `ingest`: opt-in device registry, device auth (`DEVICE_AUTH=required`), per-device rate limit, tier-aware shedding (`LOAD_SHEDDING=on`), Redis batch dedup, MQTT transport. All gated by env; defaults keep the old behaviour.
+- `apps/pipeline` (new Go binary, roles chosen by `ROLES`): registry-sync, position-updater, telemetry-archiver, detector (Phase 0 stand-in for Flink), alert-engine, delivery-recorder, usage-collector.
+- `edge-gateway`: API-key auth, `?token=` for `/v1/positions/stream` only, 1 MB body cap, problem+json `429` with `X-RateLimit-*`.
+- `fleet-api`: every OpenAPI path plus `WS /v1/positions/stream`, class-validator DTOs, problem+json errors, role guard, `audit_log` writes, `POST /internal/api-keys/verify` (internal only), page size capped at 200, numeric columns returned as numbers.
+- `notifier`: protobuf and JSON decode, SMS channel, publishes `notifications.delivered`; `WEBHOOK_SECRET` is needed for webhooks (otherwise dead-lettered).
+- `web`: Leaflet live map, `/vehicles`, `/vehicles/[id]` history, `lib/api-types.ts` generated from the contract (`pnpm gen:api`).
+- Phase 2: `stream-proc` (Flink 1.20, Java 17), `billing-batch` (Spring Batch, `--period=YYYY-MM`, exit 0/2/64), `eta-ml` (FastAPI + `python -m eta_ml.train`).
+- Contracts/DB: migration `V3` (unique index on `notification_delivery.idempotency_key`; the pipeline needs it), `kafka-topics.md` section 9, `auth.md` API-key and WebSocket sections, `/positions/stream` in `openapi.yaml`.
+- Go modules are pinned to `go 1.23` with older dependency versions so they build on the `golang:1.25.12` images; a newer `go get` silently raises that.
+
+### Verified by the assistant (throwaway Kafka/Postgres/Redis, since removed)
+
+- Unit tests pass: ingest, pipeline, edge-gateway, device-sim (Go); fleet-api (jest); stream-proc (13), billing-batch, eta-ml (16); notifier (8, built in a container).
+- End to end: 500 devices through `ingest` with auth required, `pipeline`, `fleet-api`, the gateway (JWT, API key, live WebSocket) and `web` (checked in a browser). `stream-proc` events became alerts via `alert-engine`. `billing-batch` reran idempotently and failed with exit 2 on a corrupted invoice. `eta-ml` trained and served from simulated telemetry.
+- The existing Dockerfiles for ingest, edge-gateway, device-sim, fleet-api and web built successfully against the changed code.
+
+### Not verified
+
+- MQTT was never run against a broker.
+- Notifier: emails reached Mailpit; the full webhook/SMS to `delivered` to `delivery-recorder` loop was not re-run.
+- No images or Compose services exist for `pipeline`, `stream-proc`, `billing-batch`, `eta-ml`; nothing was run under the user's Compose stack.
+- Flink was only run standalone, not on a cluster.
+
 ## Containerization status
 
 - User-reported complete: containerization of all six Phase 0 services. Do not restart image work by default; resume it only if the user asks or a later integration check exposes a concrete problem.
@@ -24,12 +54,21 @@ Phase 0, local application foundation. The user reports that containerization is
 
 ## Next task
 
-Start Phase 0 step 0.6 / backlog story `HEL-0.4.1`: define the local stateful dependency stack in Compose with PostgreSQL, Redis, and single-broker Kafka in KRaft mode. Add named volumes and real health checks. Verify a cold start reaches healthy state, data survives `docker compose restart`, `docker compose down -v` removes it, and CLI clients can connect to each service. Record resource use. Do not add ZooKeeper.
+Operator work: make the Compose stack run the completed application, then test it (backlog `HEL-0.4.3` and `HEL-0.4.4`; `HEL-0.4.1` dependency layer appears to exist now). `docker-compose.yml` has content (redis, postgresql, kafka, flyway, fleet-api, edge-gateway, web, ingest, notifier, device-sim, mailpit, webhook-sink); `docker-compose.obs.yml` and `Taskfile.yml` are still empty. This was not independently verified beyond listing service names.
 
-The checked-in Compose file is currently empty, so this task starts by implementing that dependency layer. The container-image verifier discrepancy above remains visible; do not quietly mark its acceptance criteria as verified.
+Wiring the stack needs, at minimum (each service README lists its variables):
+
+- A `pipeline` service (new Dockerfile, build context `apps/`) with `KAFKA_BROKERS`, `DATABASE_URL`, `REDIS_ADDR`; and `REDIS_ADDR` on `fleet-api` and `ingest`.
+- Apply migration `V3`; apply `apps/_db/load/load-fleet.sql` for the 500-device fleet. All contract Kafka topics must exist (auto-create is off by design).
+- `WEBHOOK_SECRET` and an SMS sink (`SMS_GATEWAY_URL`) on `notifier`; `CORS_ALLOWED_ORIGINS` on the gateway; the gateway must reach `fleet-api` (API-key verification); `/internal/*` on `fleet-api` must not be exposed.
+- Acceptance evidence to collect: device-sim at 500 devices shows moving markers on `/map`, `/vehicles/{id}` shows history, a scenario produces an alert and a Mailpit message, `usage_daily` fills.
+
+Phase 2 deployables (`stream-proc`, `billing-batch`, `eta-ml`) need Dockerfiles and runtime design (checkpoint storage, CronJob policy, model artifact storage); they are not Phase 0 blockers. The container-image verifier discrepancy above remains visible; do not quietly mark its acceptance criteria as verified.
 
 ## Other open discrepancies
 
 - The committed `.githooks/pre-commit` exists, but `core.hooksPath` was unset in the last check; the hook was therefore not confirmed active.
 - `README.md`, the roadmap baseline/next-action section, and `docs/SCAFFOLD_STATUS.md` contain stale status claims. Refresh local progress documentation when acceptance evidence is available. Do not update ADO unless explicitly requested.
-- No Phase 0 container or end-to-end stack validation was possible from the current Windows terminal because Docker was unavailable.
+- No Phase 0 container or end-to-end stack validation under the user's Compose stack has been done by the assistant; the 2026-10-27 end-to-end runs used a throwaway environment, not Compose.
+- `apps/stream-proc/target` reappeared after the assistant's cleanup (gitignored build output, likely from an IDE Java build); harmless.
+- Nothing from the 2026-10-27 work is pushed. Do not update ADO unless asked.
