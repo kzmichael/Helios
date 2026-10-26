@@ -45,7 +45,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
-	mux.Handle("/v1/", withMiddleware(fleetProxy, validator, limiter, logger))
+	mux.Handle("/v1/", withCORS(cfg.CORSAllowedOrigins, withMiddleware(fleetProxy, validator, limiter, logger)))
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,

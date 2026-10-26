@@ -6,11 +6,11 @@ Tenant dashboard, live map, and alert feed. Next.js App Router, talking to
 
 ## Pages
 
-| Path | Shows | Backed by |
-|---|---|---|
-| `/dashboard` | Fleet list | `GET /v1/fleets` |
-| `/map` | Vehicle positions, REST snapshot + live updates | `GET /v1/positions` + WebSocket (not yet built, see below) |
-| `/alerts` | Open alerts, acknowledge action | `GET /v1/alerts`, `POST /v1/alerts/{id}/acknowledge` |
+| Path         | Shows                                           | Backed by                                                  |
+| ------------ | ----------------------------------------------- | ---------------------------------------------------------- |
+| `/dashboard` | Fleet list                                      | `GET /v1/fleets`                                           |
+| `/map`       | Vehicle positions, REST snapshot + live updates | `GET /v1/positions` + WebSocket (not yet built, see below) |
+| `/alerts`    | Open alerts, acknowledge action                 | `GET /v1/alerts`, `POST /v1/alerts/{id}/acknowledge`       |
 
 ## Honest gap: the realtime channel doesn't exist yet
 
@@ -23,17 +23,18 @@ service) is the next real piece of Phase 0 app work, not a platform task.
 
 ## No real authentication yet
 
-There is no login flow. `lib/api-client.ts` reads a bearer token from
-`window.localStorage.getItem('trackline_dev_token')`. Set it manually in the
-browser console for now:
+Phase 0 provides a **Use local dev account** button in the navigation when
+`TRACKLINE_DEV_AUTH_ENABLED=true`. It requests a short-lived token through a
+same-origin Next.js route, stores it for the browser API client, and reloads the
+current page. The route calls Fleet API over the Compose network; the token is
+not minted directly from browser JavaScript.
 
-```js
-localStorage.setItem('trackline_dev_token', '<token from fleet-api /dev/token/...>')
-```
+Keep this flag enabled only for the local development stack. The route returns
+404 when disabled. Production authentication belongs to the identity-provider
+integration planned for Phase 1.
 
-This entire mechanism is Phase-0-only, tied to `fleet-api`'s `dev-auth` module —
-see `apps/fleet-api/README.md`. A real login page arrives once an identity
-provider exists (Phase 1).
+This mechanism is Phase-0-only, tied to `fleet-api`'s `dev-auth` module — see
+`apps/fleet-api/README.md`. It uses the seeded Northwind owner account.
 
 ## Running it
 

@@ -4,6 +4,7 @@
 // extend this file so every request goes through one place that handles the
 // auth header and error shape consistently.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8080/v1';
+export const DEV_TOKEN_STORAGE_KEY = 'trackline_dev_token';
 
 export interface Problem {
   type: string;
@@ -19,14 +20,12 @@ export class ApiError extends Error {
 }
 
 /**
- * Reads the access token from wherever the session is held. Phase 0 has no
- * real session/login flow yet — this reads a token set manually via
- * `window.localStorage` for development. Replace with real session handling
- * once an identity provider exists (auth.md §1).
+ * Reads the Phase 0 development token. Replace with real session handling once
+ * an identity provider exists (auth.md §1).
  */
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('trackline_dev_token');
+  return window.localStorage.getItem(DEV_TOKEN_STORAGE_KEY);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
