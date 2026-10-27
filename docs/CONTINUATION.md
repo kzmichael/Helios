@@ -8,7 +8,7 @@ This is the short-lived working handoff for resuming HELIOS across sessions and 
 
 Phase 0, local application foundation. The user reports that containerization is complete and wants to continue the project rather than repeat that work.
 
-On 2026-10-27 the assistant implemented all remaining application work under `apps/` (the user committed it as `3c96594 Added all codes`, branch `feature/Initial-setup`, ahead of origin by 2, not pushed). The operator-owned SRE work was deliberately left untouched. The next step is the operator wiring that application into the stack and testing it.
+On 2026-10-27 the assistant implemented the remaining application work under `apps/` (commit `3c96594 Added all codes`). The operator-owned SRE work was deliberately left untouched. Current Git state is `feature/Initial-setup` at `762b0f7 Updated Agent`; the worktree is clean, and the cached `github/feature/Initial-setup` and `azure/feature/Initial-setup` refs match HEAD. The terminal records `git push -u azure` succeeding. The next step is to validate the operator-owned local stack against the application.
 
 ## Recent verified work
 
@@ -16,7 +16,7 @@ On 2026-10-27 the assistant implemented all remaining application work under `ap
 - Gitleaks scanned four commits on 2026-10-14 and reported no leaks.
 - `buf generate` succeeded. `buf lint` failed because `TelemetryIngest` in `apps/_proto/trackline/v1/telemetry.proto` does not meet the configured service-name suffix rule.
 - `go test ./...` compiled `edge-gateway`, `ingest`, and `device-sim` after protobuf generation. The packages reported no test files.
-- The current Windows terminal has no `docker` command, so Compose and image runtime checks were not run in this session.
+- On 2026-10-27, Docker was available and `docker compose config --quiet` passed for the current Compose file. This checks configuration syntax only; no Compose services were started and no application integration was verified.
 
 ## Application work completed 2026-10-27 (assistant)
 
@@ -50,11 +50,13 @@ What changed, per service. Detail lives in each service README under `apps/`.
 
 - User-reported complete: containerization of all six Phase 0 services. Do not restart image work by default; resume it only if the user asks or a later integration check exposes a concrete problem.
 - The checkout contains six service Dockerfiles and `docs/adr/0004-container-base-image-strategy.md`, which records the web image size exception.
-- Repository evidence is not fully synchronized with that report: `scripts/verify-image-standard.sh`, `docker-compose.yml`, `docker-compose.obs.yml`, and `Taskfile.yml` are empty or stubbed in this checkout. Docker was unavailable here, so the reported Mac-side build/runtime acceptance was not independently repeated. Reconcile these artifacts as relevant work proceeds; do not claim their checks passed based only on the report.
+- The current `docker-compose.yml` contains Redis, PostgreSQL, Kafka, Flyway, the six Phase 0 service images, Mailpit, and a webhook sink. `docker compose config --quiet` passed on 2026-10-27, but the services were not started; health, persistence, data flow, and load acceptance remain unverified.
+- `Taskfile.yml` and `docker-compose.obs.yml` were empty on the latest check. `scripts/verify-image-standard.sh` was previously found to be a stub; it has not been rechecked in this update. Do not claim these acceptance checks pass based only on image files or the user's report.
+- Docker is available in the current Windows environment. The earlier note that it was unavailable applied to a prior check/session and is no longer current.
 
 ## Next task
 
-Operator work: make the Compose stack run the completed application, then test it (backlog `HEL-0.4.3` and `HEL-0.4.4`; `HEL-0.4.1` dependency layer appears to exist now). `docker-compose.yml` has content (redis, postgresql, kafka, flyway, fleet-api, edge-gateway, web, ingest, notifier, device-sim, mailpit, webhook-sink); `docker-compose.obs.yml` and `Taskfile.yml` are still empty. This was not independently verified beyond listing service names.
+Operator work: validate the local data layer and then wire/test the completed application, following the Phase 0 order in `docs/03_ROADMAP.md` and `backlog/phase-0.yaml`. The Compose file parses, but `HEL-0.4.1` is not accepted until cold-start health, Kafka KRaft mode, persistence across restart, volume reset, and CLI connectivity are verified. Then complete `HEL-0.4.2` migration/seed verification before treating `HEL-0.4.3` and `HEL-0.4.4` as ready for acceptance. `Taskfile.yml` remains empty, so the one-command workflow and clean-rebuild criteria are still open.
 
 Wiring the stack needs, at minimum (each service README lists its variables):
 
@@ -69,6 +71,6 @@ Phase 2 deployables (`stream-proc`, `billing-batch`, `eta-ml`) need Dockerfiles 
 
 - The committed `.githooks/pre-commit` exists, but `core.hooksPath` was unset in the last check; the hook was therefore not confirmed active.
 - `README.md`, the roadmap baseline/next-action section, and `docs/SCAFFOLD_STATUS.md` contain stale status claims. Refresh local progress documentation when acceptance evidence is available. Do not update ADO unless explicitly requested.
-- No Phase 0 container or end-to-end stack validation under the user's Compose stack has been done by the assistant; the 2026-10-27 end-to-end runs used a throwaway environment, not Compose.
-- `apps/stream-proc/target` reappeared after the assistant's cleanup (gitignored build output, likely from an IDE Java build); harmless.
-- Nothing from the 2026-10-27 work is pushed. Do not update ADO unless asked.
+- No Phase 0 end-to-end stack validation under the user's Compose stack has been done by the assistant; the 2026-10-27 application tests used a throwaway environment, not Compose.
+- The worktree was clean at `762b0f7` on 2026-10-27, and cached GitHub/Azure branch refs matched. The terminal records a successful Azure push. These remote comparisons use cached refs, not a fresh fetch.
+- Do not update ADO unless asked.
