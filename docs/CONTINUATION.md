@@ -1,6 +1,6 @@
 # HELIOS Continuation
 
-Last updated: 2026-10-27
+Last updated: 2026-11-17
 
 This is the short-lived working handoff for resuming HELIOS across sessions and machines. `AGENTS.md` explains how agents must use and update it. Verify relevant claims against the current checkout before acting; do not treat this note as a substitute for tests or acceptance evidence.
 
@@ -8,7 +8,11 @@ This is the short-lived working handoff for resuming HELIOS across sessions and 
 
 Phase 0, local application foundation. The user reports that containerization is complete and wants to continue the project rather than repeat that work.
 
-On 2026-10-27 the assistant implemented the remaining application work under `apps/` (commit `3c96594 Added all codes`). The operator-owned SRE work was deliberately left untouched. Current Git state is `feature/Initial-setup` at `762b0f7 Updated Agent`; the worktree is clean, and the cached `github/feature/Initial-setup` and `azure/feature/Initial-setup` refs match HEAD. The terminal records `git push -u azure` succeeding. The next step is to validate the operator-owned local stack against the application.
+On 2026-10-27 the assistant implemented the remaining application work under `apps/` (commit `3c96594 Added all codes`). The operator-owned SRE work was deliberately left untouched. The next step is to validate the operator-owned local stack against the application.
+
+Git state on 2026-11-17 (macOS checkout, fresh `git fetch`): `feature/Initial-setup` at `e01c105 future resume`, level with `origin/feature/Initial-setup`; worktree clean. A local/remote divergence (local `future resume`, remote `Agent Update`) was resolved with `git pull --rebase` and pushed. `git remote -v` lists only `origin` (`https://github.com/kzmichael/Helios.git`); the earlier note about an `azure` remote does not hold on this machine, so the Azure push was not rechecked here.
+
+Since 2026-10-27 the only repository change is an off-topic file the user asked for: `docs/notes/helios-future-resume.tex`, an illustrative future-state resume. Lines tagged `% TARGET` are aspirational placeholders, not claims; `% FACT` lines were true of the repo at the time. It is unrelated to project acceptance.
 
 ## Recent verified work
 
@@ -73,4 +77,5 @@ Phase 2 deployables (`stream-proc`, `billing-batch`, `eta-ml`) need Dockerfiles 
 - `README.md`, the roadmap baseline/next-action section, and `docs/SCAFFOLD_STATUS.md` contain stale status claims. Refresh local progress documentation when acceptance evidence is available. Do not update ADO unless explicitly requested.
 - No Phase 0 end-to-end stack validation under the user's Compose stack has been done by the assistant; the 2026-10-27 application tests used a throwaway environment, not Compose.
 - The worktree was clean at `762b0f7` on 2026-10-27, and cached GitHub/Azure branch refs matched. The terminal records a successful Azure push. These remote comparisons use cached refs, not a fresh fetch.
-- Do not update ADO unless asked.
+- ADO: the user asked on 2026-10-27 to update ADO (org `Kugleblitz712`, project `Ferrai`). It was **not done**: the Azure CLI sign-in had expired (`AADSTS70043`), and re-authenticating needs an interactive `az login --tenant 36da45f1-dd2c-4d1f-af13-5abe46b99921 --scope 499b84ac-1321-427f-aa17-267ca6975798/.default`. No ADO read or write happened. `scripts/backlog-sync.sh` is empty and the backlog YAML has no ADO ids, so work items must be found by title (`HEL-0.4.x`). Per `docs/06_WAYS_OF_WORKING.md` ADO owns state; add comments or create items only on request, and change states only for stories the user names.
+- On the macOS machine on 2026-11-06 Docker was not running (OrbStack socket missing); `docker-compose.yml` was unchanged (12 services, no `pipeline`), `docker-compose.obs.yml`, `Taskfile.yml` and the scripts `nuke.sh`, `seed-load.sh`, `restore-drill.sh`, `backlog-sync.sh` were empty.
