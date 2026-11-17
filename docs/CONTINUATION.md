@@ -1,6 +1,6 @@
 # HELIOS Continuation
 
-Last updated: 2026-11-17
+Last updated: 2026-11-17 (second update; no Compose changes since the first).
 
 This is the short-lived working handoff for resuming HELIOS across sessions and machines. `AGENTS.md` explains how agents must use and update it. Verify relevant claims against the current checkout before acting; do not treat this note as a substitute for tests or acceptance evidence.
 
@@ -10,9 +10,9 @@ Phase 0, local application foundation. The user reports that containerization is
 
 On 2026-10-27 the assistant implemented the remaining application work under `apps/` (commit `3c96594 Added all codes`). The operator-owned SRE work was deliberately left untouched. The next step is to validate the operator-owned local stack against the application.
 
-Git state on 2026-11-17 (macOS checkout, fresh `git fetch`): `feature/Initial-setup` at `e01c105 future resume`, level with `origin/feature/Initial-setup`; worktree clean. A local/remote divergence (local `future resume`, remote `Agent Update`) was resolved with `git pull --rebase` and pushed. `git remote -v` lists only `origin` (`https://github.com/kzmichael/Helios.git`); the earlier note about an `azure` remote does not hold on this machine, so the Azure push was not rechecked here.
+Git: work is on `feature/Initial-setup`; verify the current commit with `git log` and `git status`. Remotes differ by machine: the Windows checkout has `github` (`https://github.com/kzmichael/Helios.git`) plus `azure` and `origin`, which both point to the Azure DevOps repo; the macOS checkout reported only `origin`, pointing at GitHub. Check `git remote -v` on each machine before pushing. `agent update` commits and pushes to every distinct remote URL (see `AGENTS.md`).
 
-Since 2026-10-27 the only repository change is an off-topic file the user asked for: `docs/notes/helios-future-resume.tex`, an illustrative future-state resume. Lines tagged `% TARGET` are aspirational placeholders, not claims; `% FACT` lines were true of the repo at the time. It is unrelated to project acceptance.
+Since 2026-10-27 the only committed change is an off-topic file the user asked for: `docs/notes/helios-future-resume.tex`, an illustrative future-state resume. Lines tagged `% TARGET` are aspirational placeholders, not claims; `% FACT` lines were true of the repo at the time. It is unrelated to project acceptance.
 
 ## Recent verified work
 
@@ -20,7 +20,9 @@ Since 2026-10-27 the only repository change is an off-topic file the user asked 
 - Gitleaks scanned four commits on 2026-10-14 and reported no leaks.
 - `buf generate` succeeded. `buf lint` failed because `TelemetryIngest` in `apps/_proto/trackline/v1/telemetry.proto` does not meet the configured service-name suffix rule.
 - `go test ./...` compiled `edge-gateway`, `ingest`, and `device-sim` after protobuf generation. The packages reported no test files.
-- On 2026-10-27, Docker was available and `docker compose config --quiet` passed for the current Compose file. This checks configuration syntax only; no Compose services were started and no application integration was verified.
+- On 2026-10-27, `docker compose config --quiet` passed for the current Compose file (syntax only).
+- 2026-11-17 (Windows, Docker Desktop 29.8.2, 7.398 GiB engine limit): `HEL-0.4.1` checks all passed. The assistant observed a healthy cold start of `redis`, `postgres_db` and `kafka` and no ZooKeeper service; the operator reported CLI connectivity, persistence across `docker compose restart`, and data cleared by `docker compose down -v`. Idle memory was about 336 MiB for the three services. Evidence: `ops/evidence/HEL-0.4.1-data-layer.md`.
+- 2026-11-17: `HEL-0.4.2` verified. Flyway applied versions 1 (init), 2 (seed tenants) and 3 (notification delivery idempotency), all `success = t`. Seed counts: 3 tenants (one each free, pro, enterprise), 7 fleets, 150 vehicles, 150 devices, 5 geofences. Idempotent rerun passed; a temporary `V99__bad.sql` failed with SQL state 42601, was rolled back, and Flyway exited 1 with no version 99 row left (the file was then deleted); a `down -v` rebuild recreated the volume and reproduced the same counts (checked by migration timestamps). Evidence: `ops/evidence/HEL-0.4.2-schema-seed.md`. The data layer and Flyway were still up and healthy at the end of the session.
 
 ## Application work completed 2026-10-27 (assistant)
 
@@ -54,18 +56,36 @@ What changed, per service. Detail lives in each service README under `apps/`.
 
 - User-reported complete: containerization of all six Phase 0 services. Do not restart image work by default; resume it only if the user asks or a later integration check exposes a concrete problem.
 - The checkout contains six service Dockerfiles and `docs/adr/0004-container-base-image-strategy.md`, which records the web image size exception.
-- The current `docker-compose.yml` contains Redis, PostgreSQL, Kafka, Flyway, the six Phase 0 service images, Mailpit, and a webhook sink. `docker compose config --quiet` passed on 2026-10-27, but the services were not started; health, persistence, data flow, and load acceptance remain unverified.
-- `Taskfile.yml` and `docker-compose.obs.yml` were empty on the latest check. `scripts/verify-image-standard.sh` was previously found to be a stub; it has not been rechecked in this update. Do not claim these acceptance checks pass based only on image files or the user's report.
-- Docker is available in the current Windows environment. The earlier note that it was unavailable applied to a prior check/session and is no longer current.
+- The current `docker-compose.yml` contains Redis, PostgreSQL, Kafka, Flyway, the six Phase 0 service images, Mailpit, and a webhook sink. The data layer and Flyway were run on 2026-11-17 (see above). The application services (`fleet-api`, `edge-gateway`, `web`, `ingest`, `notifier`, `device-sim`) were not started under Compose; their health, data flow, and load acceptance remain unverified.
+- Checked on this Windows machine on 2026-11-17: no dev keys exist (`apps/fleet-api/.dev-keys/`), `apps/pipeline/Dockerfile` does not exist, and only `kshitizmichael/ingest:dev` and `kshitizmichael/web:amd64` are present locally. Compose references `:dev` tags for all six services; images pushed before 2026-10-27 may not contain the new application code, so confirm or rebuild them.
+- `Taskfile.yml` and `docker-compose.obs.yml` were empty on 2026-11-17. `scripts/verify-image-standard.sh` is a partial script: arm64 only, checks the OOM flag, a size message and a non-root user, but has no no-shell check, no multi-arch check, and an oversize image only prints a message instead of failing. It does not satisfy `HEL-0.3.4`. Do not claim these acceptance checks pass based only on image files or the user's report.
+- Docker Desktop is the engine on this Windows machine and was running on 2026-11-17; the macOS machine uses OrbStack.
 
 ## Next task
 
-Operator work: validate the local data layer and then wire/test the completed application, following the Phase 0 order in `docs/03_ROADMAP.md` and `backlog/phase-0.yaml`. The Compose file parses, but `HEL-0.4.1` is not accepted until cold-start health, Kafka KRaft mode, persistence across restart, volume reset, and CLI connectivity are verified. Then complete `HEL-0.4.2` migration/seed verification before treating `HEL-0.4.3` and `HEL-0.4.4` as ready for acceptance. `Taskfile.yml` remains empty, so the one-command workflow and clean-rebuild criteria are still open.
+Operator work, following the Phase 0 order in `docs/03_ROADMAP.md` and `backlog/phase-0.yaml`. `HEL-0.4.1` and `HEL-0.4.2` have all checks recorded. The single next step is `HEL-0.4.3` (wire the application services into Compose), done one layer at a time, verifying each before the next. The assistant guides; the operator writes the Compose and Dockerfile changes unless they ask otherwise.
 
-Wiring the stack needs, at minimum (each service README lists its variables):
+**Start with Stage 0 (prerequisites):**
+
+1. Generate the dev keys with `bash scripts/dev-token-keys.sh` (needs `openssl` and `node`); confirm `.dev-keys/` is git-ignored.
+2. Run `docker compose pull`; for any missing or stale `:dev` image, add a `build:` block (Go services `ingest`, `device-sim`, `pipeline` use `context: ./apps` with `dockerfile: <service>/Dockerfile`; `edge-gateway`, `fleet-api`, `notifier`, `web` use their own folder).
+
+Then, in order, each verified before the next:
+
+1. **Kafka topics:** set `KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"` on `kafka` (it currently defaults to on) and add a one-shot `kafka-topics-init` creating the 10 topics from `apps/_contracts/kafka-topics.md` §1 (1 partition, replication factor 1; retention 24 h for `telemetry.raw`, 7 d for the three `events.*`, `notifications.requested` and `notifications.delivered`, 30 d for `alerts.raised` and both DLQs, 90 d for `usage.recorded`).
+2. `REDIS_ADDR: redis:6379` on `fleet-api` and `ingest`.
+3. A `pipeline` service: new `apps/pipeline/Dockerfile` (modelled on `ingest`'s, `apps/` context, `./cmd/pipeline`), env `KAFKA_BROKERS`, `DATABASE_URL`, `REDIS_ADDR`, `ROLES` unset. Open decision: the Go images have no shell, so choose how to health-check them (a `-healthcheck` flag in the binary, `service_started`, or a sidecar).
+4. Apply `apps/_db/load/load-fleet.sql` outside the migration folders and confirm 500 vehicles.
+5. `notifier`: `WEBHOOK_SECRET` (untracked `.env`) and `SMS_GATEWAY_URL: http://webhook-sink:8080`.
+6. Credentials and exposure: move Postgres credentials into an untracked `.env` with a committed `.env.example`; keep `fleet-api` unpublished and `/internal/*` unproxied; bind Postgres and Redis to `127.0.0.1`.
+7. Acceptance: cold `docker compose up` with health-based ordering and no manual steps, total memory under 8 GB, dashboard renders data. Record evidence in `ops/evidence/HEL-0.4.3-*.md`.
+
+`Taskfile.yml` remains empty, so the one-command workflow and clean-rebuild criteria are still open.
+
+Wiring reference (each service README lists its variables):
 
 - A `pipeline` service (new Dockerfile, build context `apps/`) with `KAFKA_BROKERS`, `DATABASE_URL`, `REDIS_ADDR`; and `REDIS_ADDR` on `fleet-api` and `ingest`.
-- Apply migration `V3`; apply `apps/_db/load/load-fleet.sql` for the 500-device fleet. All contract Kafka topics must exist (auto-create is off by design).
+- Migration `V3` is already applied by Flyway. Apply `apps/_db/load/load-fleet.sql` for the 500-device fleet (it is not mounted in Compose). All contract Kafka topics must exist (auto-create is off by design).
 - `WEBHOOK_SECRET` and an SMS sink (`SMS_GATEWAY_URL`) on `notifier`; `CORS_ALLOWED_ORIGINS` on the gateway; the gateway must reach `fleet-api` (API-key verification); `/internal/*` on `fleet-api` must not be exposed.
 - Acceptance evidence to collect: device-sim at 500 devices shows moving markers on `/map`, `/vehicles/{id}` shows history, a scenario produces an alert and a Mailpit message, `usage_daily` fills.
 
@@ -76,6 +96,6 @@ Phase 2 deployables (`stream-proc`, `billing-batch`, `eta-ml`) need Dockerfiles 
 - The committed `.githooks/pre-commit` exists, but `core.hooksPath` was unset in the last check; the hook was therefore not confirmed active.
 - `README.md`, the roadmap baseline/next-action section, and `docs/SCAFFOLD_STATUS.md` contain stale status claims. Refresh local progress documentation when acceptance evidence is available. Do not update ADO unless explicitly requested.
 - No Phase 0 end-to-end stack validation under the user's Compose stack has been done by the assistant; the 2026-10-27 application tests used a throwaway environment, not Compose.
-- The worktree was clean at `762b0f7` on 2026-10-27, and cached GitHub/Azure branch refs matched. The terminal records a successful Azure push. These remote comparisons use cached refs, not a fresh fetch.
+- Compose follow-ups: `apache/kafka:latest` and `flyway/flyway:latest` are unpinned; Postgres and Redis publish on all interfaces (`0.0.0.0`) while Kafka binds to `127.0.0.1`; Postgres credentials are hardcoded, which `HEL-0.4.3` forbids.
 - ADO: the user asked on 2026-10-27 to update ADO (org `Kugleblitz712`, project `Ferrai`). It was **not done**: the Azure CLI sign-in had expired (`AADSTS70043`), and re-authenticating needs an interactive `az login --tenant 36da45f1-dd2c-4d1f-af13-5abe46b99921 --scope 499b84ac-1321-427f-aa17-267ca6975798/.default`. No ADO read or write happened. `scripts/backlog-sync.sh` is empty and the backlog YAML has no ADO ids, so work items must be found by title (`HEL-0.4.x`). Per `docs/06_WAYS_OF_WORKING.md` ADO owns state; add comments or create items only on request, and change states only for stories the user names.
 - On the macOS machine on 2026-11-06 Docker was not running (OrbStack socket missing); `docker-compose.yml` was unchanged (12 services, no `pipeline`), `docker-compose.obs.yml`, `Taskfile.yml` and the scripts `nuke.sh`, `seed-load.sh`, `restore-drill.sh`, `backlog-sync.sh` were empty.

@@ -25,7 +25,15 @@ When the user says **"agent update"** (or asks to update the handoff), update `d
 - Record what changed, what was verified, what was only reported by the user, blockers, and the single best next task with its acceptance evidence.
 - Keep it concise and machine-independent. Replace stale current-state claims; retain only history useful to resume. Never claim a test, deployment, push, or acceptance that was not observed.
 - Do not include credentials, tokens, private keys, or sensitive values.
-- Do not commit or push automatically. The user pushes from whichever machine they are working on.
+- Do not write claims about the commit or push into the handoff, because it is written before they happen; report their results in the reply instead.
 - Do not update ADO unless explicitly asked; the user may synchronize it later.
+
+After the handoff is written, **publish it** (this applies only to `agent update`; at any other time do not commit or push unless the user asks):
+
+1. Run `git fetch` for each remote. If the current branch is behind or has diverged on any remote, stop and report it; never force-push, rebase, or merge on your own.
+2. Stage with `git add -A`, then scan the staged changes with `mise exec -- gitleaks git --pre-commit --staged --redact -c security/gitleaks/gitleaks.toml` (the commit hook may not be active on every machine). If it reports anything, or `git status` shows unexpected files such as credentials, keys, or large artifacts, stop and ask. Never use `--no-verify`.
+3. Commit with the message `Agent update: <short summary>`.
+4. Push the current branch to every distinct remote URL in `git remote -v` with `git push <remote> <branch>`. Remotes that share a URL (for example `origin` and `azure`) count once. Remotes differ by machine, so list them each time instead of assuming names.
+5. In the reply, report each remote's push result and the final commit hash. If a push fails, say so and do not retry with force.
 
 At the start of a later session, read this handoff first, verify its relevant claims locally, and continue from its next task unless the user redirects you. If the handoff conflicts with the user's latest message or the checked-out repository, follow the latest user instruction and current repository, then correct the handoff when asked or when completing `agent update`.

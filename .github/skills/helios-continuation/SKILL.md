@@ -307,7 +307,7 @@ explicitly change that boundary.
 - Make the smallest reversible change that tests the hypothesis.
 - Validate immediately after each substantive edit.
 - Never reset, checkout, delete, or overwrite user changes without permission.
-- Do not commit, create branches, or push unless explicitly requested.
+- Do not commit, create branches, or push unless explicitly requested. The one standing exception is the publish step of `agent update`, defined in the root `AGENTS.md`.
 - Do not provision cloud resources without discussing cost, account, and cleanup impact.
 - Prefer repository conventions over new abstractions.
 - Use ASCII by default.
@@ -318,6 +318,6 @@ explicitly change that boundary.
 
 ## `agent update` workflow
 
-When the user says `agent update`, follow the root `AGENTS.md` procedure and refresh `docs/CONTINUATION.md` from the current conversation, Git status/diff, and actual validation results. Separate user-reported completion from independently verified results, identify blockers, and leave one immediate next task with its acceptance checks. Do not commit or push; the user will push from the machine they are using. Do not consult ADO unless asked.
+When the user says `agent update`, follow the root `AGENTS.md` procedure and refresh `docs/CONTINUATION.md` from the current conversation, Git status/diff, and actual validation results. Separate user-reported completion from independently verified results, identify blockers, and leave one immediate next task with its acceptance checks. Do not consult ADO unless asked. After writing the handoff, publish it exactly as the root `AGENTS.md` describes: fetch, scan staged changes with gitleaks, commit as `Agent update: <short summary>`, and push the current branch to every distinct remote URL. Never force-push, and stop and report if any remote is ahead or a scan or push fails.
 
 At session start, read the handoff, verify the current Git root/status, and continue from its next task. If the user gives a different task, follow that instruction and update the handoff when asked.
