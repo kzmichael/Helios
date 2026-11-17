@@ -1,0 +1,139 @@
+% Future-state resume: what the HELIOS roadmap (docs/03_ROADMAP.md) leaves you able to claim.
+%
+% NUMBERS: lines ending in "% TARGET" are roadmap SLOs/gates or aspirational figures.
+% Lines ending in "% FACT" are true of the repo today. Replace every TARGET with a
+% value you measured before this goes anywhere near an employer, and delete any line
+% for something you did not actually do.
+%
+% Build: pdflatex helios-future-resume.tex
+
+\documentclass[10pt,letterpaper]{article}
+
+\usepackage[margin=0.6in,top=0.5in,bottom=0.5in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{tabularx}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{accent}{HTML}{1F4E79}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlist[itemize]{leftmargin=1.1em,itemsep=1.5pt,topsep=2pt,parsep=0pt}
+
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{\MakeUppercase}[\vspace{-0.6em}\color{accent}\rule{\linewidth}{0.5pt}]
+\titlespacing*{\section}{0pt}{9pt}{5pt}
+
+\newcommand{\role}[4]{%
+  \textbf{#1} \hfill \textit{#3}\\[-1pt]
+  {\small\textit{#2}} \hfill {\small #4}\par\vspace{2pt}}
+\newcommand{\theme}[1]{\vspace{3pt}\textbf{\color{accent}#1}\par\vspace{-1pt}}
+
+\begin{document}
+
+% ------------------------------------------------------------------ header
+\begin{center}
+  {\Huge\bfseries Your Name}\\[4pt]
+  Platform / Site Reliability / DevSecOps Engineer\\[3pt]
+  {\small City, Country \;$\cdot$\; you@example.com \;$\cdot$\;
+  \href{https://github.com/yourhandle}{github.com/yourhandle} \;$\cdot$\;
+  \href{https://linkedin.com/in/yourhandle}{linkedin.com/in/yourhandle}}
+\end{center}
+
+% ------------------------------------------------------------------ summary
+\section{Summary}
+Engineer who designed, built, secured and operated an end-to-end multi-tenant SaaS
+platform across Azure, AWS, GCP and on-prem, owning it from first commit to on-call
+rotation. Spans DevOps, SRE, platform engineering and security: everything as code,
+SLO-driven operations, supply-chain-verified delivery, and cost treated as a
+first-class reliability signal. Every claim below is backed by an ADR, a runbook or a
+postmortem in the repository.
+
+% ------------------------------------------------------------------ skills
+\section{Technical Skills}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\textbf{Cloud} & Azure (AKS, Key Vault, Monitor, Entra workload identity), AWS (EKS, IAM/IRSA, VPC, S3, RDS), GCP (GKE, Workload Identity Federation), Cloudflare Tunnel \\
+\textbf{IaC \& config} & Terraform / OpenTofu, Bicep, Pulumi, Crossplane, Ansible, Helm, Kustomize \\
+\textbf{Delivery} & GitHub Actions (OIDC), Azure DevOps Pipelines, Argo CD (app-of-apps, ApplicationSets), Argo Rollouts (canary), preview environments \\
+\textbf{Observability} & OpenTelemetry (Go, TypeScript, Rust, Java, Python), Prometheus, Grafana, Loki, Tempo, SLOs as code, multi-window burn-rate alerting \\
+\textbf{Security} & Trivy, Checkov, gitleaks, SBOM, keyless Cosign signing, Kyverno, default-deny NetworkPolicy, HashiCorp Vault (dynamic credentials), Wazuh, Prowler, STRIDE \\
+\textbf{Data \& streaming} & Kafka (KRaft, Strimzi), PostgreSQL, Redis, Apache Flink, Spring Batch \\
+\textbf{Platform eng.} & Backstage, scorecards, golden paths, self-service provisioning \\
+\textbf{Languages} & Go, TypeScript, Rust, Java, Python, Bash, SQL, Protobuf/gRPC \\
+\end{tabularx}
+
+% ------------------------------------------------------------------ experience
+\section{Experience}
+
+\role{Project HELIOS: Trackline fleet-telemetry platform}{Sole platform, SRE and security engineer \;(self-directed, production-grade multi-cloud lab)}{20XX -- 20XX}{github.com/yourhandle/helios}
+
+\textbf{Scope.} Ran a multi-tenant telemetry SaaS (three pricing tiers, 500-device seeded fleet; 6 core services plus 4 pipeline and batch services in Go, TypeScript, Rust, Java and Python; 10 Kafka topics, protobuf contracts) as if it were a customer-facing product, through eight roadmap phases from local containers to a multi-cloud, policy-enforced, observed platform. % FACT
+
+\theme{Delivery and infrastructure}
+\begin{itemize}
+  \item Replaced manual deploys with GitOps: Argo CD app-of-apps and ApplicationSets reconcile \textbf{100\%} of cluster state from Git; drift is detected and self-healed. % TARGET
+  \item Cut merge-to-production lead time to \textbf{under 10 minutes} through GitHub Actions with OIDC federation; deployment success rate held above the \textbf{95\%} SLO without rollback. % TARGET
+  \item Eliminated \textbf{every} long-lived cloud and CI credential (OIDC for CI, workload identity for pods, Vault dynamic Postgres credentials), verified through provider audit logs. % TARGET
+  \item Shipped canary releases with Argo Rollouts that \textbf{auto-rolled back} a deliberately bad release on an error-rate metric, with no manual action. % TARGET
+  \item Defined the same environment in Terraform, Bicep and Pulumi with explicit ownership boundaries (no resource co-owned by two tools); rebuilt the full AWS lab from code and tore it down on a nightly schedule. % TARGET
+  \item Built distroless, non-root container images (Go services \textbf{29--40\,MB}) with documented base-image strategy and a scripted image-standard verifier. % FACT
+\end{itemize}
+
+\theme{Reliability and observability}
+\begin{itemize}
+  \item Defined and published \textbf{five SLOs as code} on user-journey SLIs: API read availability 99.9\%, read p99 $<$300\,ms, ingest success 99.95\%, alert delivery p95 $<$30\,s, and \textbf{device-to-map position freshness p99 $<$5\,s} across four services. % TARGET
+  \item Instrumented all services with OpenTelemetry (W3C trace context across HTTP, gRPC \emph{and} Kafka) so one trace spans device $\rightarrow$ ingest $\rightarrow$ Kafka $\rightarrow$ API $\rightarrow$ map; exported to \textbf{two} backends to prove vendor portability. % TARGET
+  \item Wrote multi-window, multi-burn-rate alerts and error-budget policy; every page links to a runbook with a clear action; removed non-actionable alerts rather than silencing them. % TARGET
+  \item Carried the pager through a seeded high-cardinality incident: stopped ingestion before resource exhaustion, cut active series by \textbf{$\sim$90\%}, added a guard, and published a blameless postmortem. % TARGET
+  \item Load-tested to \textbf{100k simulated devices} (1\,Hz) and produced a capacity statement covering devices, node count, throughput, p99 latency and monthly cost; scaled consumers on \textbf{Kafka lag} (KEDA) rather than CPU. % TARGET
+  \item Ran \textbf{5 chaos experiments and a region-loss game day}; measured \textbf{RTO under 30 min, RPO under 1 min} for Azure failover and failback, and restored Postgres and the cluster into fresh targets with timed drills. % TARGET
+  \item Found, reproduced and fixed multiple production-style defects in the application under load, each with a reproduction, root cause, fix, regression test and postmortem. % TARGET
+\end{itemize}
+
+\theme{Security and supply chain}
+\begin{itemize}
+  \item Authored a STRIDE threat model and identity inventory; mapped every human, device, CI, service and cloud identity to its permissions and secrets. % TARGET
+  \item Gated \textbf{100\%} of images behind Trivy, Checkov and gitleaks in required CI checks; a planted secret and a planted vulnerable artifact were both blocked. % TARGET
+  \item Generated SBOMs and keyless-signed every image with Cosign; Kyverno admission \textbf{rejects unsigned, \texttt{:latest}, root or limit-less workloads} with actionable errors, rolled out audit-first to avoid self-inflicted outages. % TARGET
+  \item Enforced default-deny NetworkPolicy from an observed traffic map, with tested allow paths; shipped cluster and cloud audit logs to Wazuh and ran Prowler baselines on Azure and AWS. % TARGET
+  \item Reduced edge attack surface: gateway strips and re-asserts trust headers (closing a confused-deputy tenant-isolation risk), cross-tenant reads return 404, device tokens stored only as SHA-256. % FACT
+\end{itemize}
+
+\theme{Multi-cloud and cost (FinOps)}
+\begin{itemize}
+  \item Operated a justified hybrid topology across Azure, AWS, GCP and an Ansible-built on-prem cluster, with a documented reason for each workload's placement and federated identity on each cloud. % TARGET
+  \item Held total cloud spend under a \textbf{\$50/month} credit through ephemeral-by-default environments, nightly destroy, budget alarms and a tested kill switch; exposed \textbf{cost per tenant} and made at least one architecture decision on that evidence. % TARGET
+\end{itemize}
+
+\theme{Platform engineering}
+\begin{itemize}
+  \item Packaged the platform as a product for other engineers: Backstage catalog with an owner for every service, scorecards, and a golden path that takes a new service to build, policy, deployment, observability and ownership \textbf{in under 30 minutes}. % TARGET
+  \item Built self-service database provisioning (Crossplane) within policy and no cloud-console steps; validated the design with a user test that changed the platform. % TARGET
+\end{itemize}
+
+\theme{Application and data engineering (owned the stack I operated)}
+\begin{itemize}
+  \item Stream and batch services: Flink job for geofence, speeding, idle and offline detection with keyed state, timers, event-time windows and replay-safe idempotency keys; Spring Batch billing with idempotent reruns, integer-minor-unit money and a reconciliation step that fails the job on any mismatch. % FACT
+  \item Edge and ingest: Go gateway (JWT/JWKS, API keys, per-tenant token-bucket rate limiting in Redis, problem+json errors) and gRPC/MQTT ingest with device authentication, per-device limits and tier-aware load shedding (Enterprise never shed). % FACT
+  \item Live fleet map over WebSocket (Redis pub/sub fan-out, Leaflet, backoff with jitter and snapshot resync on reconnect); at-least-once pipelines with dead-letter handling and idempotent consumers. % FACT
+\end{itemize}
+
+% ------------------------------------------------------------------ artifacts
+\section{Selected Artifacts}
+\begin{itemize}
+  \item \textbf{ADRs and runbooks:} an architecture decision record, a retrospective and an updated runbook for every phase; stranger-readable runbooks behind every page. % TARGET
+  \item \textbf{Backlog-as-code:} stories, acceptance criteria and dependencies in YAML, mirrored to Azure DevOps Boards, with work-in-progress limit 2 and evidence-based completion. % FACT
+\end{itemize}
+
+% ------------------------------------------------------------------ education
+\section{Education \& Certifications}
+\textbf{Degree, Field} \hfill \textit{University, Year}\\
+Certifications: \textit{list only those you hold, e.g.\ CKA, CKS, Terraform Associate, AZ-400.}
+
+\end{document}
