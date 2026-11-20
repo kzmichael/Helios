@@ -1,6 +1,6 @@
 # HELIOS Continuation
 
-Last updated: 2026-11-17 (second update; no Compose changes since the first).
+Last updated: 2026-11-20 (macOS checkout; no project work since the 2026-11-17 update).
 
 This is the short-lived working handoff for resuming HELIOS across sessions and machines. `AGENTS.md` explains how agents must use and update it. Verify relevant claims against the current checkout before acting; do not treat this note as a substitute for tests or acceptance evidence.
 
@@ -22,6 +22,7 @@ Since 2026-10-27 the only committed change is an off-topic file the user asked f
 - `go test ./...` compiled `edge-gateway`, `ingest`, and `device-sim` after protobuf generation. The packages reported no test files.
 - On 2026-10-27, `docker compose config --quiet` passed for the current Compose file (syntax only).
 - 2026-11-17 (Windows, Docker Desktop 29.8.2, 7.398 GiB engine limit): `HEL-0.4.1` checks all passed. The assistant observed a healthy cold start of `redis`, `postgres_db` and `kafka` and no ZooKeeper service; the operator reported CLI connectivity, persistence across `docker compose restart`, and data cleared by `docker compose down -v`. Idle memory was about 336 MiB for the three services. Evidence: `ops/evidence/HEL-0.4.1-data-layer.md`.
+- 2026-11-20 (macOS, OrbStack not running): the checkout was fast-forwarded to the remote's `HEL-0.4.1`/`HEL-0.4.2` handoff commit with no local changes; `git remote -v` lists only `origin` (GitHub). `docker-compose.yml` is unchanged (5721 bytes, 12 services, no `pipeline`), and `docker-compose.obs.yml` and `Taskfile.yml` are empty. Nothing was re-verified on this machine.
 - 2026-11-17: `HEL-0.4.2` verified. Flyway applied versions 1 (init), 2 (seed tenants) and 3 (notification delivery idempotency), all `success = t`. Seed counts: 3 tenants (one each free, pro, enterprise), 7 fleets, 150 vehicles, 150 devices, 5 geofences. Idempotent rerun passed; a temporary `V99__bad.sql` failed with SQL state 42601, was rolled back, and Flyway exited 1 with no version 99 row left (the file was then deleted); a `down -v` rebuild recreated the volume and reproduced the same counts (checked by migration timestamps). Evidence: `ops/evidence/HEL-0.4.2-schema-seed.md`. The data layer and Flyway were still up and healthy at the end of the session.
 
 ## Application work completed 2026-10-27 (assistant)
