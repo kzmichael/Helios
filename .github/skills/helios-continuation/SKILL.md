@@ -1,6 +1,6 @@
 ---
 name: helios-continuation
-description: Resume Project HELIOS from the current checkout, or refresh its cross-session handoff when the user says "agent update".
+description: Resume Project HELIOS from the current checkout ("agent update in") or refresh and publish its cross-session handoff ("agent update out").
 disable-model-invocation: true
 ---
 # HELIOS Continuation Skill
@@ -214,7 +214,7 @@ Before marking secret-scanning work complete:
 7. Confirm the hook rejects the commit.
 8. Remove the test fixture completely.
 9. Scan this repository's history, not a parent workspace's history.
-10. Record evidence in `docs/CONTINUATION.md` when the user requests an `agent update`.
+10. Record evidence in `docs/CONTINUATION.md` when the user requests an `agent update out`.
 
 Do not claim success merely because gitleaks prints `no leaks found`. Confirm that the
 pre-commit hook actually ran and rejected a staged test secret.
@@ -307,7 +307,7 @@ explicitly change that boundary.
 - Make the smallest reversible change that tests the hypothesis.
 - Validate immediately after each substantive edit.
 - Never reset, checkout, delete, or overwrite user changes without permission.
-- Do not commit, create branches, or push unless explicitly requested. The one standing exception is the publish step of `agent update`, defined in the root `AGENTS.md`.
+- Do not commit, create branches, or push unless explicitly requested. The standing exceptions are the pull in `agent update in` and the publish step of `agent update out`, defined in the root `AGENTS.md`.
 - Do not provision cloud resources without discussing cost, account, and cleanup impact.
 - Prefer repository conventions over new abstractions.
 - Use ASCII by default.
@@ -316,8 +316,12 @@ explicitly change that boundary.
   them through testing and observability.
 - When blocked, inspect the concrete error and repair the same slice before expanding scope.
 
-## `agent update` workflow
+## `agent update in` and `agent update out`
 
-When the user says `agent update`, follow the root `AGENTS.md` procedure and refresh `docs/CONTINUATION.md` from the current conversation, Git status/diff, and actual validation results. Separate user-reported completion from independently verified results, identify blockers, and leave one immediate next task with its acceptance checks. Do not consult ADO unless asked. After writing the handoff, publish it exactly as the root `AGENTS.md` describes: fetch, scan staged changes with gitleaks, commit as `Agent update: <short summary>`, and push the current branch to every distinct remote URL. Never force-push, and stop and report if any remote is ahead or a scan or push fails.
+The root `AGENTS.md` defines both commands and lists the two remotes (GitHub and Azure DevOps) by URL. Follow it exactly.
 
-At session start, read the handoff, verify the current Git root/status, and continue from its next task. If the user gives a different task, follow that instruction and update the handoff when asked.
+`agent update in` starts a session: fetch both remotes, fast-forward the current branch with `git pull --ff-only` from the remote that is ahead, read `docs/CONTINUATION.md` without editing it, and report what the other machine completed, what was verified versus only reported, blockers, and the next task. Stop and report if the branch has diverged or uncommitted changes would be touched. Do not commit or push.
+
+`agent update out` (or a bare `agent update`) ends a session: refresh `docs/CONTINUATION.md` from the current conversation, Git status/diff, and actual validation results. Separate user-reported completion from independently verified results, identify blockers, and leave one immediate next task with its acceptance checks. Do not consult ADO unless asked. Then publish: fetch, scan staged changes with gitleaks, commit as `Agent update: <short summary>`, and push the current branch to both remotes. Never force-push, and stop and report if any remote is ahead or a scan or push fails.
+
+If the user gives a different task, follow that instruction and update the handoff when asked.
