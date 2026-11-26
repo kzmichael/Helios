@@ -42,9 +42,14 @@ services:
 
   kafka-topics-init:
     image: apache/kafka
+    restart: "no"
     depends_on:
         kafka:
           condition: service_healthy
+    volumes:
+      - ./scripts/kafka-topics-init.sh:/scripts/kafka-topics-init.sh:ro      
+    entrypoint: ["/bin/sh", "/scripts/kafka-topics-init.sh"]
+
 
   kafka:
     image: apache/kafka:latest
@@ -112,6 +117,8 @@ services:
       - "127.0.0.1:8082:8080"
 
   fleet-api:
+    build:
+      context: ./apps/fleet-api
     image: kshitizmichael/fleet-api:dev
     container_name: fleet-api
     environment:
@@ -131,6 +138,8 @@ services:
 
 
   edge-gateway:
+    build:
+      context: ./apps/edge-gateway
     image: kshitizmichael/edge-gateway:dev
     container_name: edge-gateway
     ports:
@@ -149,6 +158,8 @@ services:
 
 
   web:
+    build:
+      context: ./apps/web
     image: kshitizmichael/web:dev
     container_name: web
     ports:
@@ -162,6 +173,9 @@ services:
       edge-gateway:
         condition: service_started
   ingest:
+    build:
+      context: ./apps
+      dockerfile: ingest/Dockerfile
     image: kshitizmichael/ingest:dev
     container_name: ingest
     environment:
@@ -185,6 +199,8 @@ services:
     restart: unless-stopped
 
   notifier:
+    build:
+      context: ./apps/notifier
     image: kshitizmichael/notifier:dev
     container_name: notifier
     environment:
@@ -199,6 +215,9 @@ services:
 
 
   device-sim:
+    build:
+      context: ./apps
+      dockerfile: device-sim/Dockerfile
     image: kshitizmichael/device-sim:dev
     container_name: device-sim
     environment:
